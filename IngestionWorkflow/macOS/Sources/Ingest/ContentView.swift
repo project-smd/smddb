@@ -13,11 +13,41 @@ enum Node: Hashable {
     case stream(title: Int, stream: Int)
 }
 
-/// Two screens. Before a scan the only thing to do is start one, so that screen is the drives and
-/// the one setting that changes what a scan sees. After a scan the window is MakeMKV's: titles,
-/// tracks, an output folder and a button.
+/// The window: a sidebar of the workflow's stages, and the selected stage's own view.
 @MainActor
 struct ContentView: View {
+    @Environment(IngestModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        NavigationSplitView {
+            // Rows are tagged with the stage itself, since the selection is a Stage and not its id.
+            List(selection: Binding(get: { model.stage }, set: { model.stage = $0 ?? model.stage })) {
+                ForEach(Stage.allCases) { stage in
+                    Label(stage.title, systemImage: stage.systemImage)
+                        .badge(stage == .assign ? model.assignQueue.count : 0)
+                        .tag(stage)
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 150, ideal: 170)
+        } detail: {
+            switch model.stage {
+            case .import:
+                ImportView()
+            case .assign:
+                AssignView()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await model.windowBecameActive() }
+        }
+    }
+}
+
+/// The Import stage. Two screens: before a scan the only thing to do is start one, so that screen
+/// is the drives; after a scan the view is MakeMKV's — titles, tracks, and the Import button.
+@MainActor
+struct ImportView: View {
     @Environment(IngestModel.self) private var model
     @State private var selection: Node?
     @State private var logPresented = true
@@ -45,12 +75,9 @@ struct ContentView: View {
                     .frame(height: 160)
             }
         }
-        .navigationTitle(model.scan?.disc?.name ?? "Ingest")
+        .navigationTitle(model.scan?.disc?.name ?? "Import")
         .toolbar { toolbar }
         .onChange(of: model.scan) { selection = nil }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await model.windowBecameActive() }
-        }
     }
 
     // MARK: - Toolbar
@@ -70,16 +97,16 @@ struct ContentView: View {
             ToolbarItem(placement: .primaryAction) {
                 // The next step, and the one thing on this screen drawn in the accent colour.
                 Button {
-                    Task { await model.ripSelectedTitles() }
+                    model.importSelectedTitles()
                 } label: {
-                    Text("Ingest")
+                    Text("Import")
                         .padding(.horizontal, 6)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!model.canIngest)
+                .disabled(!model.canImport)
                 .help(model.destination == nil
                       ? "Choose an output folder in Settings first"
-                      : "Rip the ticked titles to \(model.destination!.path)")
+                      : "Rip the ticked titles to \(model.destination!.path); each joins Assign as it finishes. Titles sent while a batch runs join it.")
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }

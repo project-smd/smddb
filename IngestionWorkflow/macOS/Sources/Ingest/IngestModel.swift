@@ -30,6 +30,15 @@ struct LogEntry: Identifiable, Hashable {
     var isError = false
 }
 
+/// Where a title stands with Import once the user has asked for it. A title with no status is
+/// still available to tick and queue.
+enum ImportStatus: Hashable {
+    case queued
+    case importing
+    case imported
+    case failed
+}
+
 /// What the window is doing. One thing at a time, because MakeMKV is.
 enum Phase: Hashable {
     case idle
@@ -53,10 +62,30 @@ final class IngestModel {
         UserDefaults.standard.integer(forKey: Preferences.minimumTitleLength)
     }
 
+    /// Which stage the window is showing. The sidebar's selection.
+    var stage: Stage = .import
+
+    /// Files the Import stage has finished with, oldest first. A file joins the moment its own rip
+    /// completes, while later titles in the same batch are still being ripped.
+    private(set) var assignQueue: [ImportedItem] = []
+
     private(set) var scan: Scan?
     private(set) var phase: Phase = .idle
     private(set) var progress: RipProgress?
     var selectedTitles: Set<Int> = []
+
+    /// Titles the user has sent to Import, by index, and how far each has got. A title here stays
+    /// ticked and can no longer be unticked; more can be ticked and sent while these are running.
+    private(set) var importStatus: [Int: ImportStatus] = [:]
+    /// Titles waiting for the import worker, in the order they were sent.
+    private var importQueue: [Int] = []
+    /// How many titles have been sent this batch, for the "n of m" in the progress bar. The count
+    /// grows if more are sent while the batch runs.
+    private var importBatchTotal = 0
+    private var importBatchDone = 0
+    /// Whether the worker is running. Tracked on its own rather than through `phase`, which a drive
+    /// listing also occupies: Import pressed during one must still start the worker.
+    private var importWorkerRunning = false
 
     /// Bumped whenever the preferences change, so a view that reads a preference through the
     /// model re-renders when the settings window edits it. Preferences are not observable on their
@@ -93,6 +122,23 @@ final class IngestModel {
                flag + 1 < CommandLine.arguments.count, let index = Int(CommandLine.arguments[flag + 1]) {
                 await scan(.drive(index))
             }
+            // `Ingest --stage assign` opens on that stage.
+            if let flag = CommandLine.arguments.firstIndex(of: "--stage"),
+               flag + 1 < CommandLine.arguments.count, let requested = Stage(rawValue: CommandLine.arguments[flag + 1]) {
+                stage = requested
+            }
+            // `Ingest --seed-queue N` puts N made-up files in the Assign queue. The same kind of
+            // affordance as --scan: it gets the Assign screen populated without a rip.
+            if let flag = CommandLine.arguments.firstIndex(of: "--seed-queue"),
+               flag + 1 < CommandLine.arguments.count, let count = Int(CommandLine.arguments[flag + 1]) {
+                for n in 0..<count {
+                    let title = Title(index: n, attributes: [
+                        .sourceFileName: Attribute(id: .sourceFileName, messageCode: 0, value: String(format: "%05d.mpls", 178 + n)),
+                        .duration: Attribute(id: .duration, messageCode: 0, value: "0:24:41"),
+                    ], tracks: [])
+                    assignQueue.append(ImportedItem(fileURL: URL(fileURLWithPath: "/tmp/Seeded_t\(n).mkv"), discName: "Seeded disc", title: title))
+                }
+            }
             watcher = DriveWatcher { [weak self] in
                 Task { @MainActor in await self?.drivesMayHaveChanged() }
             }
@@ -126,7 +172,9 @@ final class IngestModel {
     func refreshDrives() async {
         guard let makeMKV, !phase.isBusy else { return }
         phase = .listingDrives
-        defer { phase = .idle }
+        // Only give the phase back if nothing took it over meanwhile: an import sent during the
+        // listing starts its worker, and the worker owns the phase from then on.
+        defer { if phase == .listingDrives { phase = .idle } }
         do {
             drives = try await makeMKV.drives().filter(\.isPresent)
             lastListed = .now
@@ -156,6 +204,7 @@ final class IngestModel {
         guard !phase.isBusy else { return }
         scan = nil
         selectedTitles = []
+        importStatus = [:]
         await refreshDrives()
     }
 
@@ -178,6 +227,7 @@ final class IngestModel {
         }
         scan = nil
         selectedTitles = []
+        importStatus = [:]
         note("Scanning \(picked.source.argument) with minimum length \(minimumTitleLength)s")
         do {
             // Messages are logged as they arrive, so the log moves while the disc is being read.
@@ -201,45 +251,94 @@ final class IngestModel {
 
     // MARK: - Rip
 
+    /// Ticked titles not yet sent to Import: what the Import button would send.
     var ripCandidates: [Title] {
-        (scan?.titles ?? []).filter { selectedTitles.contains($0.index) }
+        (scan?.titles ?? []).filter { selectedTitles.contains($0.index) && importStatus[$0.index] == nil }
     }
 
+    /// Titles the user can still tick or untick: those not sent to Import.
+    var availableTitles: [Title] {
+        (scan?.titles ?? []).filter { importStatus[$0.index] == nil }
+    }
+
+    /// The header checkbox's state, over the titles that can still be ticked. Sent titles stay
+    /// ticked but are out of the count, so a batch in progress reads as none selected, not some.
     var selectionState: MixedCheckbox.State {
-        let titles = scan?.titles ?? []
-        let selected = titles.filter { selectedTitles.contains($0.index) }.count
-        return selected == 0 ? .none : selected == titles.count ? .all : .some
+        let available = availableTitles
+        let selected = available.filter { selectedTitles.contains($0.index) }.count
+        return selected == 0 ? .none : selected == available.count ? .all : .some
     }
 
     /// The header checkbox: everything ticked becomes nothing; anything else becomes everything.
-    /// From a partial selection the useful move is to complete it, not to clear it.
+    /// From a partial selection the useful move is to complete it, not to clear it. Sent titles
+    /// are left as they are either way.
     func toggleAllTitles() {
-        selectedTitles = selectionState == .all ? [] : Set((scan?.titles ?? []).map(\.index))
+        let available = Set(availableTitles.map(\.index))
+        if selectionState == .all {
+            selectedTitles.subtract(available)
+        } else {
+            selectedTitles.formUnion(available)
+        }
     }
 
-    /// Whether Ingest can start: something scanned, something ticked, somewhere to write, MakeMKV free.
-    var canIngest: Bool {
-        !ripCandidates.isEmpty && destination != nil && !phase.isBusy
+    /// Whether Import can send something: a ticked title not yet sent, and somewhere to write. Not
+    /// gated on MakeMKV being free: sending while a batch runs adds to that batch.
+    var canImport: Bool {
+        !ripCandidates.isEmpty && destination != nil && scan != nil
     }
 
-    func ripSelectedTitles() async {
-        guard let makeMKV, let scan, let destination, !phase.isBusy else { return }
-        let titles = ripCandidates
-        guard !titles.isEmpty else { return }
+    /// Send the ticked, unsent titles to Import. They are marked queued at once, which is what
+    /// disables their checkboxes, and the worker picks them up in order; if it is already running
+    /// they join the end of the current batch. Returns what was sent.
+    @discardableResult
+    func importSelectedTitles() -> [Title] {
+        guard let scan, destination != nil else { return [] }
+        let sending = ripCandidates
+        guard !sending.isEmpty else { return [] }
+        for title in sending {
+            importStatus[title.index] = .queued
+            importQueue.append(title.index)
+        }
+        importBatchTotal += sending.count
+        note("Sent \(sending.count) title(s) to Import")
+        if !importWorkerRunning {
+            importWorkerRunning = true
+            Task { await runImportQueue(from: scan) }
+        }
+        return sending
+    }
+
+    /// A rip finished: the file is Import's no longer, and Assign's from now. Called once per title
+    /// as each completes, so the queue grows while the batch is still running.
+    func recordImport(of title: Title, from scan: Scan, at fileURL: URL) {
+        assignQueue.append(ImportedItem(fileURL: fileURL, discName: scan.disc?.name ?? "Disc", title: title))
+    }
+
+    /// The import worker: rip queued titles one at a time until the queue is empty. Runs once per
+    /// batch; `importSelectedTitles` starts it when MakeMKV is idle and otherwise just queues.
+    private func runImportQueue(from scan: Scan) async {
         defer {
+            importWorkerRunning = false
             phase = .idle
             progress = nil
+            importBatchTotal = 0
+            importBatchDone = 0
             Task { await refreshIfWanted() }
         }
+        guard let makeMKV, let destination else { return }
         // The extraction settings, read once for the whole batch so every file in it keeps the same
         // tracks, and passed as a profile so the result does not depend on this machine's MakeMKV
         // preferences.
         let profile = ConversionProfile(name: "smddb Ingest", selection: Preferences.extractionRule())
         note("Track selection: \(profile.selection)")
-        for (position, title) in titles.enumerated() {
-            phase = .ripping(titleIndex: title.index, position: position + 1, count: titles.count)
+        while !importQueue.isEmpty {
+            let index = importQueue.removeFirst()
+            guard let title = scan.title(index: index) else { continue }
+            importBatchDone += 1
+            phase = .ripping(titleIndex: index, position: importBatchDone, count: importBatchTotal)
             progress = nil
-            note("Ripping title \(title.index) (\(title.sourceIdentifier ?? "?")) to \(destination.path)")
+            importStatus[index] = .importing
+            note("Importing title \(index) (\(title.sourceIdentifier ?? "?")) to \(destination.path)")
             do {
                 let result = try await makeMKV.rip(title, from: scan, to: destination, profile: profile) { [weak self] line in
                     Task { @MainActor in self?.record(line) }
@@ -247,19 +346,32 @@ final class IngestModel {
                     Task { @MainActor in self?.progress = progress }
                 }
                 note("Wrote \(result.outputURL.lastPathComponent)")
+                importStatus[index] = .imported
+                recordImport(of: title, from: scan, at: result.outputURL)
             } catch MakeMKVError.processFailed(let status, let messages) {
                 record(messages)
-                fail("makemkvcon exited with status \(status) on title \(title.index)", nil)
-                return
+                importStatus[index] = .failed
+                fail("makemkvcon exited with status \(status) on title \(index)", nil)
             } catch MakeMKVError.outputMissing(let url, let messages) {
                 record(messages)
+                importStatus[index] = .failed
                 fail("MakeMKV finished but \(url.lastPathComponent) is not there", nil)
-                return
             } catch {
-                fail("Rip of title \(title.index) failed", error)
-                return
+                importStatus[index] = .failed
+                fail("Import of title \(index) failed", error)
             }
         }
+    }
+
+    // MARK: - Testing
+
+    /// Install a scan, and optionally a MakeMKV, without a drive. With `makeMKV` nil the import
+    /// worker starts and returns at once, so sending titles can be checked without ripping.
+    func adoptForTesting(_ scan: Scan, makeMKV: MakeMKV?) {
+        self.scan = scan
+        self.makeMKV = makeMKV
+        selectedTitles = []
+        importStatus = [:]
     }
 
     // MARK: - Log

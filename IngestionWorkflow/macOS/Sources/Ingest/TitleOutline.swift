@@ -41,19 +41,29 @@ struct TitleOutline: View {
     /// One checkbox over all the titles, showing the third state when the selection is partial.
     private var header: some View {
         HStack(spacing: 6) {
-            MixedCheckbox(state: model.selectionState, isEnabled: !model.phase.isBusy) {
+            MixedCheckbox(state: model.selectionState, isEnabled: !model.availableTitles.isEmpty) {
                 model.toggleAllTitles()
             }
             .fixedSize()
             Text("All titles")
                 .fontWeight(.medium)
             Spacer()
-            Text("\(model.selectedTitles.count) of \(model.scan?.titles.count ?? 0) selected")
+            Text(summary)
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    /// "3 of 65 selected", and how many have been sent once any have.
+    private var summary: String {
+        let available = model.availableTitles
+        let selected = available.filter { model.selectedTitles.contains($0.index) }.count
+        let sent = model.importStatus.count
+        return sent == 0
+            ? "\(selected) of \(available.count) selected"
+            : "\(selected) of \(available.count) selected · \(sent) sent to Import"
     }
 
     private var titleList: some View {
@@ -106,8 +116,11 @@ struct TitleOutline: View {
         )
     }
 
+    /// A title sent to Import keeps its tick, loses its checkbox, and shows where it has got to;
+    /// the rest stay tickable while a batch runs, so more can be sent to join it.
     private func titleRow(_ title: Title) -> some View {
         @Bindable var model = model
+        let status = model.importStatus[title.index]
         return HStack {
             Toggle("", isOn: Binding(
                 get: { model.selectedTitles.contains(title.index) },
@@ -117,21 +130,48 @@ struct TitleOutline: View {
             ))
             .toggleStyle(.checkbox)
             .labelsHidden()
-            .disabled(model.phase.isBusy)
+            .disabled(status != nil)
             Text("Title \(title.index)")
                 .fontWeight(.medium)
             Text(title.sourceIdentifier ?? "")
                 .font(.callout.monospaced())
                 .foregroundStyle(.secondary)
             Spacer()
-            Text([
-                title.durationText,
-                title.chapterCount.map { "\($0) ch" },
-                title.diskSizeText,
-            ].compactMap { $0 }.joined(separator: " · "))
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            if let status {
+                statusView(status)
+            } else {
+                Text([
+                    title.durationText,
+                    title.chapterCount.map { "\($0) ch" },
+                    title.diskSizeText,
+                ].compactMap { $0 }.joined(separator: " · "))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
         }
+        .foregroundStyle(status == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+    }
+
+    @ViewBuilder
+    private func statusView(_ status: ImportStatus) -> some View {
+        HStack(spacing: 6) {
+            switch status {
+            case .queued:
+                Image(systemName: "clock")
+                Text("Queued")
+            case .importing:
+                ProgressView().controlSize(.mini)
+                Text("Importing…")
+            case .imported:
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Imported")
+            case .failed:
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                Text("Failed")
+            }
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
     }
 
     /// `derived` is what sits nested under this track, named on the row so the relationship is
