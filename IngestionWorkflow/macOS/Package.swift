@@ -23,5 +23,6 @@ let package = Package(
                 .product(name: "MakeMKVRobot", package: "MakeMKVKit"),
             ]
         ),
+        .testTarget(name: "IngestTests", dependencies: ["Ingest"]),
     ]
 )
