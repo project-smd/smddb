@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the smddb project authors
 
+import AppKit
 import MakeMKV
 import SwiftUI
 
 /// The preference keys, one place, so the settings window and the model agree on spelling and on
 /// first-run values. Each step of the ingestion flow gets a page of its own as it arrives.
 enum Preferences {
+    // Ingestion
+    /// The folder ripped files land in, as a path. No default: it is chosen, and until it is the
+    /// Ingest button says why it is disabled.
+    static let outputFolder = "outputFolder"
+
     // Scanning
     static let minimumTitleLength = "minimumTitleLength"
 
@@ -58,6 +64,8 @@ enum Preferences {
 struct SettingsView: View {
     var body: some View {
         TabView {
+            IngestionSettings()
+                .tabItem { Label("Ingestion", systemImage: "tray.and.arrow.down") }
             ScanningSettings()
                 .tabItem { Label("Scanning", systemImage: "opticaldisc") }
             ExtractionSettings()
@@ -65,6 +73,47 @@ struct SettingsView: View {
         }
         .scenePadding()
         .frame(width: 460, height: 300)
+    }
+}
+
+struct IngestionSettings: View {
+    @AppStorage(Preferences.outputFolder) private var outputFolder = ""
+
+    var body: some View {
+        Form {
+            LabeledContent("Output folder") {
+                HStack {
+                    if outputFolder.isEmpty {
+                        Text("Not chosen")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(outputFolder)
+                            .truncationMode(.middle)
+                            .lineLimit(1)
+                            .help(outputFolder)
+                    }
+                    Button("Choose…") { choose() }
+                }
+            }
+            Text("Where ripped files are written. Ingest is disabled until a folder is chosen.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .formStyle(.grouped)
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        if !outputFolder.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: outputFolder)
+        }
+        panel.prompt = "Use as output folder"
+        if panel.runModal() == .OK, let url = panel.url {
+            outputFolder = url.path
+        }
     }
 }
 

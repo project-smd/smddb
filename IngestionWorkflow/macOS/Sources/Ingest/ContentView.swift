@@ -67,38 +67,31 @@ struct ContentView: View {
                 .help("Back to the drive list")
                 .disabled(model.phase.isBusy)
             }
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    chooseDestination()
-                } label: {
-                    Label(model.destination.lastPathComponent, systemImage: "folder")
-                }
-                .help("Output folder: \(model.destination.path)")
+            ToolbarItem(placement: .primaryAction) {
+                // The next step, and the one thing on this screen drawn in the accent colour.
                 Button {
                     Task { await model.ripSelectedTitles() }
                 } label: {
-                    Label("Make MKV", systemImage: "film.stack")
+                    Text("Ingest")
+                        .padding(.horizontal, 6)
                 }
-                .disabled(model.ripCandidates.isEmpty || model.phase.isBusy)
+                .buttonStyle(.borderedProminent)
+                .disabled(!model.canIngest)
+                .help(model.destination == nil
+                      ? "Choose an output folder in Settings first"
+                      : "Rip the ticked titles to \(model.destination!.path)")
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }
         ToolbarItem(placement: .primaryAction) {
-            Toggle(isOn: $logPresented) {
-                Label("Log", systemImage: "text.alignleft")
+            // A plain button, not a toggle: a toggle in a toolbar fills with the accent colour when
+            // on, and the log is not the thing to draw the eye.
+            Button {
+                logPresented.toggle()
+            } label: {
+                Label("Log", systemImage: logPresented ? "rectangle.bottomthird.inset.filled" : "rectangle.bottomthird.inset")
             }
-        }
-    }
-
-    private func chooseDestination() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.directoryURL = model.destination
-        panel.prompt = "Use as output folder"
-        if panel.runModal() == .OK, let url = panel.url {
-            model.destination = url
+            .help(logPresented ? "Hide the log" : "Show the log")
         }
     }
 

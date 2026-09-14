@@ -57,8 +57,18 @@ final class IngestModel {
     private(set) var phase: Phase = .idle
     private(set) var progress: RipProgress?
     var selectedTitles: Set<Int> = []
-    var destination: URL = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
-        ?? FileManager.default.homeDirectoryForCurrentUser
+
+    /// Bumped whenever the preferences change, so a view that reads a preference through the
+    /// model re-renders when the settings window edits it. Preferences are not observable on their
+    /// own; this makes the ones the window depends on behave as if they were.
+    private(set) var preferencesVersion = 0
+
+    /// The output folder from the preferences, or `nil` until one is chosen there.
+    var destination: URL? {
+        _ = preferencesVersion
+        let path = UserDefaults.standard.string(forKey: Preferences.outputFolder) ?? ""
+        return path.isEmpty ? nil : URL(fileURLWithPath: path)
+    }
 
     private(set) var log: [LogEntry] = []
 
@@ -70,6 +80,9 @@ final class IngestModel {
     // MARK: - Lifecycle
 
     func start() async {
+        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.preferencesVersion += 1 }
+        }
         do {
             makeMKV = try MakeMKV()
             note("Using \(makeMKV!.executable.path)")
@@ -204,8 +217,13 @@ final class IngestModel {
         selectedTitles = selectionState == .all ? [] : Set((scan?.titles ?? []).map(\.index))
     }
 
+    /// Whether Ingest can start: something scanned, something ticked, somewhere to write, MakeMKV free.
+    var canIngest: Bool {
+        !ripCandidates.isEmpty && destination != nil && !phase.isBusy
+    }
+
     func ripSelectedTitles() async {
-        guard let makeMKV, let scan, !phase.isBusy else { return }
+        guard let makeMKV, let scan, let destination, !phase.isBusy else { return }
         let titles = ripCandidates
         guard !titles.isEmpty else { return }
         defer {
