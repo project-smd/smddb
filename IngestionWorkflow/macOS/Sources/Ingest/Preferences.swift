@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the smddb project authors
 
+import MakeMKV
 import SwiftUI
 
 /// The preference keys, one place, so the settings window and the model agree on spelling and on
@@ -13,6 +14,27 @@ enum Preferences {
     static let includeEmbeddedAudioTracks = "includeEmbeddedAudioTracks"
     static let includeSubtitles = "includeSubtitles"
     static let includeEmbeddedSubtitleTracks = "includeEmbeddedSubtitleTracks"
+
+    /// The extraction settings as MakeMKV's selection rule: every track on the disc, minus what the
+    /// switches leave out. Everything, not MakeMKV's own default, because that default drops tracks
+    /// on grounds of language and channel count — a stereo track when a 5.1 exists in the same
+    /// language — and on a Collection disc the stereo track is the original mix. 3D dependent-view
+    /// video is left out as MakeMKV leaves it out; nothing here plays it.
+    static func extractionRule(_ defaults: UserDefaults = .standard) -> SelectionRule {
+        var actions: [SelectionRule.Action] = [
+            .select(.attribute(.all)),
+            .deselect(.attribute(.mvcvideo)),
+        ]
+        if !defaults.bool(forKey: includeEmbeddedAudioTracks) {
+            actions.append(.deselect(.attribute(.core)))
+        }
+        if !defaults.bool(forKey: includeSubtitles) {
+            actions.append(.deselect(.attribute(.subtitle)))
+        } else if !defaults.bool(forKey: includeEmbeddedSubtitleTracks) {
+            actions.append(.deselect(.and(.attribute(.subtitle), .attribute(.forced))))
+        }
+        return SelectionRule(actions)
+    }
 
     /// Registered at launch, so a key that has never been set reads as its default rather than as
     /// zero or false, and the defaults are stated once rather than at every read.
