@@ -1,0 +1,18 @@
+name: licence
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  LicenceHeaders:
+    name: Licence headers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      # Pure git and shell, and the only gate this repository has: there is nothing here to
+      # compile, so a missing header would otherwise never be noticed by anything.
+      - name: Check SPDX headers
+        run: ./Scripts/check-license-headers.sh
