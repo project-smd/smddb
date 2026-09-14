@@ -115,12 +115,14 @@ struct IngestTests {
         #expect(model.selectedTitles == [0, 1, 2])
         #expect(model.importSelectedTitles().map(\.index) == [2])
         #expect(model.importStatus[2] == .queued)
+        // The batch total counts everything sent so far, which is what the progress bar shows.
+        #expect(model.importBatchTotal == 3)
     }
 
     @Test func phaseBusyness() {
         #expect(!Phase.idle.isBusy)
         #expect(Phase.listingDrives.isBusy)
         #expect(Phase.scanning.isBusy)
-        #expect(Phase.ripping(titleIndex: 0, position: 1, count: 1).isBusy)
+        #expect(Phase.ripping(titleIndex: 0).isBusy)
     }
 }

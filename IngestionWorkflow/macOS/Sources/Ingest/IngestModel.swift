@@ -44,7 +44,9 @@ enum Phase: Hashable {
     case idle
     case listingDrives
     case scanning
-    case ripping(titleIndex: Int, position: Int, count: Int)
+    /// Ripping one title. Its place in the batch is not carried here, because the batch can grow
+    /// while it runs; `IngestModel.importBatchDone` and `importBatchTotal` are read live instead.
+    case ripping(titleIndex: Int)
 
     var isBusy: Bool { self != .idle }
 }
@@ -79,10 +81,11 @@ final class IngestModel {
     private(set) var importStatus: [Int: ImportStatus] = [:]
     /// Titles waiting for the import worker, in the order they were sent.
     private var importQueue: [Int] = []
-    /// How many titles have been sent this batch, for the "n of m" in the progress bar. The count
-    /// grows if more are sent while the batch runs.
-    private var importBatchTotal = 0
-    private var importBatchDone = 0
+    /// How many titles have been sent this batch and how many the worker has started, for the
+    /// "n of m" in the progress bar. The total grows when more are sent while the batch runs, and
+    /// the bar reads both live rather than a snapshot taken when the current title began.
+    private(set) var importBatchTotal = 0
+    private(set) var importBatchDone = 0
     /// Whether the worker is running. Tracked on its own rather than through `phase`, which a drive
     /// listing also occupies: Import pressed during one must still start the worker.
     private var importWorkerRunning = false
@@ -335,7 +338,7 @@ final class IngestModel {
             let index = importQueue.removeFirst()
             guard let title = scan.title(index: index) else { continue }
             importBatchDone += 1
-            phase = .ripping(titleIndex: index, position: importBatchDone, count: importBatchTotal)
+            phase = .ripping(titleIndex: index)
             progress = nil
             importStatus[index] = .importing
             note("Importing title \(index) (\(title.sourceIdentifier ?? "?")) to \(destination.path)")

@@ -131,10 +131,11 @@ struct ImportView: View {
             case .idle, .listingDrives, .scanning:
                 Text("Ready")
                     .foregroundStyle(.secondary)
-            case .ripping(let titleIndex, let position, let count):
+            case .ripping(let titleIndex):
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("Title \(titleIndex) — \(position) of \(count)")
+                        // Read live, so sending more titles mid-batch updates the total at once.
+                        Text("Title \(titleIndex) — \(model.importBatchDone) of \(model.importBatchTotal)")
                         Spacer()
                         Text(model.progress?.current?.name ?? "Starting")
                             .foregroundStyle(.secondary)
