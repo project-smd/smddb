@@ -36,6 +36,25 @@ struct IngestTests {
         #expect(model.selectedTitles.isEmpty)
     }
 
+    @Test func extractionRuleFollowsTheSwitches() {
+        // Registered defaults are process-wide, so every switch is set explicitly per case rather
+        // than relying on an unset key reading false.
+        func rule(audio: Bool, subtitles: Bool, embeddedSubtitles: Bool) -> String {
+            let defaults = UserDefaults(suiteName: "IngestTests.extractionRule")!
+            defer { defaults.removePersistentDomain(forName: "IngestTests.extractionRule") }
+            defaults.set(audio, forKey: Preferences.includeEmbeddedAudioTracks)
+            defaults.set(subtitles, forKey: Preferences.includeSubtitles)
+            defaults.set(embeddedSubtitles, forKey: Preferences.includeEmbeddedSubtitleTracks)
+            return Preferences.extractionRule(defaults).description
+        }
+        #expect(rule(audio: false, subtitles: false, embeddedSubtitles: false) == "+sel:all,-sel:mvcvideo,-sel:core,-sel:subtitle")
+        #expect(rule(audio: false, subtitles: true, embeddedSubtitles: false) == "+sel:all,-sel:mvcvideo,-sel:core,-sel:(subtitle*forced)")
+        #expect(rule(audio: false, subtitles: true, embeddedSubtitles: true) == "+sel:all,-sel:mvcvideo,-sel:core")
+        #expect(rule(audio: true, subtitles: true, embeddedSubtitles: true) == "+sel:all,-sel:mvcvideo")
+        // Subtitles off overrides the embedded-subtitle switch entirely.
+        #expect(rule(audio: true, subtitles: false, embeddedSubtitles: true) == "+sel:all,-sel:mvcvideo,-sel:subtitle")
+    }
+
     @Test func phaseBusyness() {
         #expect(!Phase.idle.isBusy)
         #expect(Phase.listingDrives.isBusy)

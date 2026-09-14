@@ -213,12 +213,17 @@ final class IngestModel {
             progress = nil
             Task { await refreshIfWanted() }
         }
+        // The extraction settings, read once for the whole batch so every file in it keeps the same
+        // tracks, and passed as a profile so the result does not depend on this machine's MakeMKV
+        // preferences.
+        let profile = ConversionProfile(name: "smddb Ingest", selection: Preferences.extractionRule())
+        note("Track selection: \(profile.selection)")
         for (position, title) in titles.enumerated() {
             phase = .ripping(titleIndex: title.index, position: position + 1, count: titles.count)
             progress = nil
             note("Ripping title \(title.index) (\(title.sourceIdentifier ?? "?")) to \(destination.path)")
             do {
-                let result = try await makeMKV.rip(title, from: scan, to: destination) { [weak self] line in
+                let result = try await makeMKV.rip(title, from: scan, to: destination, profile: profile) { [weak self] line in
                     Task { @MainActor in self?.record(line) }
                 } progress: { [weak self] progress in
                     Task { @MainActor in self?.progress = progress }
