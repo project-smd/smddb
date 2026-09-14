@@ -1,0 +1,15 @@
+{
+  "originHash" : "bab05d2e05f7186a3d58eee58ff33ea86257303a315225debe3afb32b80a045c",
+  "pins" : [
+    {
+      "identity" : "makemkvkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/project-smd/MakeMKVKit.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "03de717407b3fb671afad4b31009db6a0e90168d"
+      }
+    }
+  ],
+  "version" : 3
+}

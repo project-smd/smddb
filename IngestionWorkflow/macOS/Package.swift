@@ -11,9 +11,9 @@ let package = Package(
         .executable(name: "Ingest", targets: ["Ingest"]),
     ],
     dependencies: [
-        // A sibling checkout for now: the wrapper is young enough that both sides change together,
-        // and a path dependency lets that happen without a release on every edit.
-        .package(path: "../../../MakeMKVKit"),
+        // Tracked by branch rather than by version while the wrapper has no release: the two change
+        // together, and a tag on every edit would be ceremony. Pin to a version once one exists.
+        .package(url: "https://github.com/project-smd/MakeMKVKit.git", branch: "main"),
     ],
     targets: [
         .executableTarget(
