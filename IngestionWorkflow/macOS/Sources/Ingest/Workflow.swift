@@ -35,17 +35,21 @@ enum Stage: String, CaseIterable, Identifiable, Hashable {
 /// the title on that disc, which is the `<source>` the sidecar proposal records. The title is kept
 /// whole rather than by index, because an index only means something against the scan it came
 /// from and the scan is gone by the time anyone assigns.
-struct ImportedItem: Identifiable, Hashable {
+struct ImportedItem: Identifiable, Hashable, Codable {
     let id: UUID
     var fileURL: URL
     var discName: String
+    /// The pressing the file came from, when the disc could be fingerprinted at import time. This
+    /// is what the sidecar's source element names, and what the database is keyed on.
+    var fingerprint: DiscFingerprint?
     var title: Title
     var importedAt: Date
 
-    init(id: UUID = UUID(), fileURL: URL, discName: String, title: Title, importedAt: Date = .now) {
+    init(id: UUID = UUID(), fileURL: URL, discName: String, fingerprint: DiscFingerprint? = nil, title: Title, importedAt: Date = .now) {
         self.id = id
         self.fileURL = fileURL
         self.discName = discName
+        self.fingerprint = fingerprint
         self.title = title
         self.importedAt = importedAt
     }

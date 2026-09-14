@@ -77,6 +77,7 @@ struct QueueDrawer: View {
                             item.discName,
                             "title \(item.title.index)",
                             item.title.durationText,
+                            item.fingerprint.map { String($0.contentHash.prefix(8)) },
                         ].compactMap { $0 }.joined(separator: " · "))
                         .font(.callout)
                         .foregroundStyle(.secondary)

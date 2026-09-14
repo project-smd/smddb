@@ -37,6 +37,8 @@ enum ImportStatus: Hashable {
     case importing
     case imported
     case failed
+    /// Imported on an earlier launch, per the history kept for this disc.
+    case previouslyImported(Date)
 }
 
 /// What the window is doing. One thing at a time, because MakeMKV is.
@@ -68,8 +70,32 @@ final class IngestModel {
     var stage: Stage = .import
 
     /// Files the Import stage has finished with, oldest first. A file joins the moment its own rip
-    /// completes, while later titles in the same batch are still being ripped.
+    /// completes, while later titles in the same batch are still being ripped. Kept across launches.
     private(set) var assignQueue: [ImportedItem] = []
+
+    /// What has been imported from which disc, across launches, so a disc put back in the drive
+    /// shows the titles already taken from it as done rather than offering them again.
+    private(set) var imports: [String: [String: ImportRecord]] = [:]
+    private let store: IngestStore
+
+    /// The fingerprint of the scanned disc, when its volume could be read; the key its history is
+    /// filed under, and the provenance each imported file carries.
+    private(set) var fingerprint: DiscFingerprint?
+
+    init(store: IngestStore = IngestStore()) {
+        self.store = store
+        let state = store.load()
+        assignQueue = state.assignQueue
+        imports = state.imports
+    }
+
+    private func persist() {
+        do {
+            try store.save(PersistedState(assignQueue: assignQueue, imports: imports))
+        } catch {
+            fail("Could not save the queue", error)
+        }
+    }
 
     private(set) var scan: Scan?
     private(set) var phase: Phase = .idle
@@ -238,9 +264,12 @@ final class IngestModel {
                 Task { @MainActor in self?.record(line) }
             }
             scan = result
-            // MakeMKV ticks every title it lists; so do we.
+            // MakeMKV ticks every title it lists; so do we, minus what this disc's history says
+            // has already been imported.
             selectedTitles = Set(result.titles.map(\.index))
             note("\(result.titles.count) title(s) on \(result.disc?.name ?? "the disc")")
+            await fingerprintScannedDisc(picked, volumeName: result.disc?.volumeName)
+            applyImportHistory()
         } catch MakeMKVError.discUnavailable(let messages) {
             record(messages)
             fail("No disc could be opened", nil)
@@ -312,9 +341,64 @@ final class IngestModel {
     }
 
     /// A rip finished: the file is Import's no longer, and Assign's from now. Called once per title
-    /// as each completes, so the queue grows while the batch is still running.
+    /// as each completes, so the queue grows while the batch is still running. Both the queue and
+    /// the disc's history are saved at once, so a quit mid-batch loses nothing already done.
     func recordImport(of title: Title, from scan: Scan, at fileURL: URL) {
-        assignQueue.append(ImportedItem(fileURL: fileURL, discName: scan.disc?.name ?? "Disc", title: title))
+        let discName = scan.disc?.name ?? "Disc"
+        let item = ImportedItem(fileURL: fileURL, discName: discName, fingerprint: fingerprint, title: title)
+        assignQueue.append(item)
+        let discKey = IngestStore.discKey(fingerprint: fingerprint, discName: discName)
+        imports[discKey, default: [:]][IngestStore.titleKey(title)] = ImportRecord(titleIndex: title.index, fileURL: fileURL, importedAt: item.importedAt)
+        persist()
+    }
+
+    /// The disc's key in the import history, for the scan in hand.
+    var currentDiscKey: String? {
+        scan.map { IngestStore.discKey(fingerprint: fingerprint, discName: $0.disc?.name ?? "Disc") }
+    }
+
+    /// After a scan: mark the titles this disc's history says were imported, and tick the rest.
+    func applyImportHistory() {
+        guard let scan, let discKey = currentDiscKey else { return }
+        let history = imports[discKey] ?? [:]
+        var marked = 0
+        for title in scan.titles {
+            if let record = history[IngestStore.titleKey(title)] {
+                importStatus[title.index] = .previouslyImported(record.importedAt)
+                selectedTitles.remove(title.index)
+                marked += 1
+            }
+        }
+        if marked > 0 {
+            note("\(marked) title(s) already imported from this disc")
+        }
+    }
+
+    /// Read the disc's fingerprint from its volume, off the main thread, since the scan already
+    /// told us which volume it is. A disc macOS cannot mount, or an ISO, has none and is filed by
+    /// name instead.
+    private func fingerprintScannedDisc(_ picked: PickedSource, volumeName: String?) async {
+        let root: URL? = switch picked {
+        case .drive: volumeName.flatMap(DiscFingerprinter.volume(named:))
+        case .folder(let url): url
+        case .iso: nil
+        }
+        guard let root else {
+            fingerprint = nil
+            note("Disc volume not readable; its history is filed by name")
+            return
+        }
+        let result = await Task.detached { try DiscFingerprinter.fingerprint(root: root) }.result
+        switch result {
+        case .success(let print):
+            fingerprint = print
+            if let print {
+                note("Fingerprint \(print.contentHash)" + (print.aacsDiscId.map { ", AACS \($0)" } ?? ""))
+            }
+        case .failure(let error):
+            fingerprint = nil
+            fail("Could not fingerprint the disc", error)
+        }
     }
 
     /// The import worker: rip queued titles one at a time until the queue is empty. Runs once per
@@ -370,11 +454,13 @@ final class IngestModel {
 
     /// Install a scan, and optionally a MakeMKV, without a drive. With `makeMKV` nil the import
     /// worker starts and returns at once, so sending titles can be checked without ripping.
-    func adoptForTesting(_ scan: Scan, makeMKV: MakeMKV?) {
+    func adoptForTesting(_ scan: Scan, makeMKV: MakeMKV?, fingerprint: DiscFingerprint? = nil) {
         self.scan = scan
         self.makeMKV = makeMKV
-        selectedTitles = []
+        self.fingerprint = fingerprint
+        selectedTitles = Set(scan.titles.map(\.index))
         importStatus = [:]
+        applyImportHistory()
     }
 
     // MARK: - Log
