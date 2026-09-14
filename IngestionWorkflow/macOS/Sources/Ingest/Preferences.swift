@@ -9,8 +9,8 @@ import SwiftUI
 /// first-run values. Each step of the ingestion flow gets a page of its own as it arrives.
 enum Preferences {
     // Ingestion
-    /// The folder ripped files land in, as a path. No default: it is chosen, and until it is the
-    /// Ingest button says why it is disabled.
+    /// The folder imported files land in, as a path. No default: it is chosen, and until it is the
+    /// Import button says why it is disabled.
     static let outputFolder = "outputFolder"
 
     // Scanning
@@ -95,7 +95,7 @@ struct IngestionSettings: View {
                     Button("Choose…") { choose() }
                 }
             }
-            Text("Where ripped files are written. Ingest is disabled until a folder is chosen.")
+            Text("Where imported files are written. Import is disabled until a folder is chosen.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }

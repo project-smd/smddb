@@ -14,7 +14,16 @@ not here yet. This exists so there is a working scan-and-rip loop to hang those 
 swift run Ingest
 ```
 
-The opening screen is one button per drive; pressing one scans it. Drives and discs are noticed
+Three launch arguments exist for working on a screen without going through the ones before it:
+`--scan N` scans drive N at startup, `--stage assign` opens on that stage, and `--seed-queue N`
+puts N made-up files in the Assign queue.
+
+The window is a sidebar of the workflow's stages and the selected stage's own view. **Import** is
+the scan-and-rip loop; **Assign**, which says what each ripped file is, holds a queue that files
+join one by one as Import finishes each of them, with the count badged on the sidebar. Assign is
+currently the queue in a drawer and nothing else.
+
+In Import, the opening screen is one button per drive; pressing one scans it. Drives and discs are noticed
 as they come and go — a disc in or out through DiskArbitration, a drive plugged or unplugged
 through IOKit — and the table is re-read from MakeMKV when they do. It is read again when the
 window comes back to the front after a while, and on the way back from a scan, which covers the one
