@@ -35,7 +35,8 @@ struct LogEntry: Identifiable, Hashable {
 enum ImportStatus: Hashable {
     case queued
     case importing
-    case imported
+    /// Imported in this session, carrying when, so it shows the same as a title imported before.
+    case imported(Date)
     case failed
     /// Imported on an earlier launch, per the history kept for this disc.
     case previouslyImported(Date)
@@ -401,13 +402,15 @@ final class IngestModel {
     /// A rip finished: the file is Import's no longer, and Assign's from now. Called once per title
     /// as each completes, so the queue grows while the batch is still running. Both the queue and
     /// the disc's history are saved at once, so a quit mid-batch loses nothing already done.
-    func recordImport(of title: Title, from scan: Scan, at fileURL: URL) {
+    @discardableResult
+    func recordImport(of title: Title, from scan: Scan, at fileURL: URL) -> ImportedItem {
         let discName = scan.disc?.name ?? "Disc"
         let item = ImportedItem(fileURL: fileURL, discName: discName, fingerprint: fingerprint, title: title)
         assignQueue.append(item)
         let discKey = IngestStore.discKey(fingerprint: fingerprint, discName: discName)
         imports[discKey, default: [:]][IngestStore.titleKey(title)] = ImportRecord(titleIndex: title.index, fileURL: fileURL, importedAt: item.importedAt)
         persist()
+        return item
     }
 
     /// The disc's key in the import history, for the scan in hand.
@@ -509,8 +512,8 @@ final class IngestModel {
                     outputURL = result.outputURL
                 }
                 note("Wrote \(outputURL.lastPathComponent)")
-                importStatus[index] = .imported
-                recordImport(of: title, from: scan, at: outputURL)
+                let item = recordImport(of: title, from: scan, at: outputURL)
+                importStatus[index] = .imported(item.importedAt)
             } catch MakeMKVError.processFailed(let status, let messages) {
                 record(messages)
                 importStatus[index] = .failed
