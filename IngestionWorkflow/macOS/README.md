@@ -23,6 +23,13 @@ the scan-and-rip loop; **Assign**, which says what each ripped file is, holds a 
 join one by one as Import finishes each of them, with the count badged on the sidebar. Assign is
 currently the queue in a drawer and nothing else.
 
+The Assign queue and the import history are kept in `~/Library/Application Support/smddb Ingest/state.json`,
+rewritten whole on every change. A scanned disc is fingerprinted from its mounted volume the way
+TheDiscDb keys discs, an MD5 over the stream file sizes and a SHA1 of `AACS/Unit_Key_RO.inf`, and
+its history is filed under that hash; titles the history says were already imported come up
+disabled and unticked, keyed by playlist, segment map and duration so a change of minimum length
+does not lose them. A disc macOS cannot mount is filed under its MakeMKV name instead.
+
 In Import, the opening screen is one button per drive; pressing one scans it. Drives and discs are noticed
 as they come and go — a disc in or out through DiskArbitration, a drive plugged or unplugged
 through IOKit — and the table is re-read from MakeMKV when they do. It is read again when the

@@ -29,7 +29,7 @@ struct IngestTests {
     }
 
     @Test @MainActor func selectionStateFollowsTheTicks() {
-        let model = IngestModel()
+        let model = IngestModel(store: IngestStore(directory: temporaryDirectory()))
         // With nothing scanned there is nothing to tick, and that reads as none rather than all.
         #expect(model.selectionState == .none)
         #expect(model.ripCandidates.isEmpty)
@@ -57,7 +57,7 @@ struct IngestTests {
     }
 
     @Test @MainActor func aFinishedImportJoinsTheAssignQueue() {
-        let model = IngestModel()
+        let model = IngestModel(store: IngestStore(directory: temporaryDirectory()))
         #expect(model.assignQueue.isEmpty)
         let scan = Scan(source: .disc(0), settings: ScanSettings(), result: DiscScan(parsing: """
             TCOUNT:1
@@ -77,7 +77,7 @@ struct IngestTests {
     }
 
     @Test @MainActor func sendingToImportMarksTitlesAndLeavesTheRestTickable() {
-        let model = IngestModel()
+        let model = IngestModel(store: IngestStore(directory: temporaryDirectory()))
         // A scan, a destination and ticks, without a drive: the model's own state is enough to
         // check what Import sends and what it leaves alone.
         let defaults = UserDefaults.standard
@@ -119,10 +119,86 @@ struct IngestTests {
         #expect(model.importBatchTotal == 3)
     }
 
+    @Test func contentHashMatchesTheDiscDbAlgorithm() throws {
+        // Three files of sizes 1, 2 and 3 bytes under BDMV/STREAM: MD5 over the sizes as
+        // little-endian Int64 in name order, computed independently in Python.
+        let root = temporaryDirectory()
+        let stream = root.appendingPathComponent("BDMV/STREAM")
+        try FileManager.default.createDirectory(at: stream, withIntermediateDirectories: true)
+        for (name, size) in [("00002.m2ts", 2), ("00001.m2ts", 1), ("00003.m2ts", 3)] {
+            try Data(repeating: 0, count: size).write(to: stream.appendingPathComponent(name))
+        }
+        try Data("not a stream".utf8).write(to: stream.appendingPathComponent("ignored.txt"))
+        let print = try #require(try DiscFingerprinter.fingerprint(root: root))
+        #expect(print.format == .bluray)
+        #expect(print.contentHash == "AA341A15F5ADE44FAAFBE190F98C2587")
+        #expect(print.aacsDiscId == nil)
+
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("AACS"), withIntermediateDirectories: true)
+        try Data("key".utf8).write(to: root.appendingPathComponent("AACS/Unit_Key_RO.inf"))
+        #expect(try DiscFingerprinter.fingerprint(root: root)?.aacsDiscId == "A62F2225BF70BFACCBC7F1EF2A397836717377DE")
+        #expect(try DiscFingerprinter.fingerprint(root: temporaryDirectory()) == nil)
+    }
+
+    @Test @MainActor func queueAndHistorySurviveARelaunch() throws {
+        let directory = temporaryDirectory()
+        let print = DiscFingerprint(format: .bluray, contentHash: "ABCD", aacsDiscId: nil)
+        let scan = Scan(source: .disc(0), settings: ScanSettings(), result: DiscScan(parsing: """
+            TCOUNT:2
+            CINFO:2,0,"Some Disc"
+            TINFO:0,16,0,"00015.m2ts"
+            TINFO:0,26,0,"15"
+            TINFO:0,9,0,"0:02:57"
+            TINFO:1,16,0,"00016.m2ts"
+            TINFO:1,26,0,"16"
+            TINFO:1,9,0,"0:05:00"
+            """))
+
+        let first = IngestModel(store: IngestStore(directory: directory))
+        first.adoptForTesting(scan, makeMKV: nil, fingerprint: print)
+        first.recordImport(of: scan.titles[0], from: scan, at: URL(fileURLWithPath: "/tmp/out/a.mkv"))
+        #expect(first.assignQueue.count == 1)
+
+        // A new model over the same store: the queue is back, and the same disc shows the title
+        // as already imported, unticked, while the other is offered as before.
+        let second = IngestModel(store: IngestStore(directory: directory))
+        #expect(second.assignQueue.map(\.fileName) == ["a.mkv"])
+        #expect(second.assignQueue[0].fingerprint == print)
+        #expect(second.assignQueue[0].title.sourceIdentifier == "00015.m2ts")
+        second.adoptForTesting(scan, makeMKV: nil, fingerprint: print)
+        guard case .previouslyImported? = second.importStatus[0] else {
+            Issue.record("title 0 should be marked as previously imported, got \(String(describing: second.importStatus[0]))")
+            return
+        }
+        #expect(second.importStatus[1] == nil)
+        #expect(second.selectedTitles == [1])
+        #expect(second.availableTitles.map(\.index) == [1])
+
+        // The same disc scanned with a different minimum length renumbers titles; the history is
+        // keyed by the title's natural identity, so it still finds it.
+        let renumbered = Scan(source: .disc(0), settings: ScanSettings(), result: DiscScan(parsing: """
+            TCOUNT:1
+            CINFO:2,0,"Some Disc"
+            TINFO:7,16,0,"00015.m2ts"
+            TINFO:7,26,0,"15"
+            TINFO:7,9,0,"0:02:57"
+            """))
+        second.adoptForTesting(renumbered, makeMKV: nil, fingerprint: print)
+        #expect(second.importStatus[7] != nil)
+    }
+
     @Test func phaseBusyness() {
         #expect(!Phase.idle.isBusy)
         #expect(Phase.listingDrives.isBusy)
         #expect(Phase.scanning.isBusy)
         #expect(Phase.ripping(titleIndex: 0).isBusy)
     }
+}
+
+/// A fresh directory under the temporary folder, for stores and fingerprints that must not touch
+/// the real ones.
+func temporaryDirectory() -> URL {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("IngestTests-" + UUID().uuidString, isDirectory: true)
+    try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
 }

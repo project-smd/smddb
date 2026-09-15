@@ -168,6 +168,9 @@ struct TitleOutline: View {
             case .failed:
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
                 Text("Failed")
+            case .previouslyImported(let date):
+                Image(systemName: "checkmark.circle")
+                Text("Imported \(date, format: .dateTime.day().month().year())")
             }
         }
         .font(.callout)
