@@ -26,6 +26,9 @@ enum Preferences {
     static let includeSubtitles = "includeSubtitles"
     static let includeEmbeddedSubtitleTracks = "includeEmbeddedSubtitleTracks"
 
+    // Playback
+    static let autoplay = "autoplay"
+
     /// The extraction settings as MakeMKV's selection rule: every track on the disc, minus what the
     /// switches leave out. Everything, not MakeMKV's own default, because that default drops tracks
     /// on grounds of language and channel count — a stereo track when a 5.1 exists in the same
@@ -73,6 +76,9 @@ enum Preferences {
             // whereas forced captions are flags inside the PGS stream that players do not honour,
             // and MakeMKV drops the derived track when it turns out to be empty, so it is free.
             includeEmbeddedSubtitleTracks: true,
+            // Selecting a file shows its first frame, paused. Off because selecting is how the queue
+            // is browsed, and a file starting up with sound each time is not browsing.
+            autoplay: false,
         ])
     }
 }
@@ -87,6 +93,8 @@ struct SettingsView: View {
                 .tabItem { Label("Scanning", systemImage: "opticaldisc") }
             ExtractionSettings()
                 .tabItem { Label("Extraction", systemImage: "film.stack") }
+            PlaybackSettings()
+                .tabItem { Label("Playback", systemImage: "play.rectangle") }
         }
         .scenePadding()
         .frame(width: 460, height: 300)
@@ -190,6 +198,20 @@ struct ExtractionSettings: View {
                     .foregroundStyle(.secondary)
                     .padding(.leading, 20)
             }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+struct PlaybackSettings: View {
+    @AppStorage(Preferences.autoplay) private var autoplay = false
+
+    var body: some View {
+        Form {
+            Toggle("Play a file when it is selected", isOn: $autoplay)
+            Text("Otherwise a selected file opens paused on its first frame, and Space plays it.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
     }

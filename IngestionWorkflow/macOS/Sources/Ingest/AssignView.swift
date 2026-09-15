@@ -31,7 +31,7 @@ struct AssignView: View {
         .navigationTitle("Assign")
         .onChange(of: selectedItem?.fileURL, initial: true) { _, url in
             if let url {
-                player.load(url)
+                player.load(url, autoplay: UserDefaults.standard.bool(forKey: Preferences.autoplay))
             } else {
                 player.stop()
             }
