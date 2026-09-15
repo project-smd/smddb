@@ -141,9 +141,9 @@ struct ImportView: View {
                             .foregroundStyle(.secondary)
                     }
                     .font(.callout)
+                    // One bar: this title's own progress. The batch position is the "X of Y" above,
+                    // so a second whole-job bar only competed with it.
                     ProgressView(value: model.progress?.value.currentFraction ?? 0)
-                    ProgressView(value: model.progress?.value.totalFraction ?? 0)
-                        .tint(.secondary)
                 }
             }
             Spacer()
