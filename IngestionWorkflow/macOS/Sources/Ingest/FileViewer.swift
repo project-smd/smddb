@@ -77,10 +77,10 @@ struct FileViewer: View {
 /// The player's video view, handed to SwiftUI as is. It belongs to the player, so a rebuilt SwiftUI
 /// tree gets the same one back and playback carries on.
 private struct VideoSurface: NSViewRepresentable {
-    let view: VLCVideoView
+    let view: FilePlayer.VideoHostView
 
-    func makeNSView(context: Context) -> VLCVideoView { view }
-    func updateNSView(_ nsView: VLCVideoView, context: Context) {}
+    func makeNSView(context: Context) -> FilePlayer.VideoHostView { view }
+    func updateNSView(_ nsView: FilePlayer.VideoHostView, context: Context) {}
 }
 
 /// Play and pause, chapter and frame steps, a scrubber, and the audio and subtitle track menus.
