@@ -102,8 +102,8 @@ struct IngestTests {
         #expect(model.importStatus[1] == .queued)
         #expect(model.importStatus[2] == nil)
 
-        // The sent titles stay ticked but are no longer candidates or part of the header's count.
-        #expect(model.selectedTitles == [0, 1])
+        // The sent titles are unticked as they go, and are no longer candidates or in the count.
+        #expect(model.selectedTitles == [])
         #expect(model.ripCandidates.isEmpty)
         #expect(model.availableTitles.map(\.index) == [2])
         #expect(model.selectionState == .none)
@@ -112,7 +112,7 @@ struct IngestTests {
         // Sending again with nothing new sends nothing; ticking the last one and sending adds it.
         #expect(model.importSelectedTitles().isEmpty)
         model.toggleAllTitles()
-        #expect(model.selectedTitles == [0, 1, 2])
+        #expect(model.selectedTitles == [2])
         #expect(model.importSelectedTitles().map(\.index) == [2])
         #expect(model.importStatus[2] == .queued)
         // The batch total counts everything sent so far, which is what the progress bar shows.

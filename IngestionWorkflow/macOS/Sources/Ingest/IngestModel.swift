@@ -389,6 +389,9 @@ final class IngestModel {
         for title in sending {
             importStatus[title.index] = .queued
             importQueue.append(title.index)
+            // Untick as it is sent: the row is about to disable, and a ticked-but-disabled box
+            // reads as still selectable. Its status now says where it is.
+            selectedTitles.remove(title.index)
         }
         importBatchTotal += sending.count
         note("Sent \(sending.count) title(s) to Import")
