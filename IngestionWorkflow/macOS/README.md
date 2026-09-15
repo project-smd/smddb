@@ -29,10 +29,12 @@ puts N made-up files in the Assign queue. Pass them through `open` as
 The window is a sidebar of the workflow's stages and the selected stage's own view. **Import** is
 the scan-and-rip loop; **Assign**, which says what each ripped file is, holds a queue that files
 join one by one as Import finishes each of them, with the count badged on the sidebar. Selecting a
-queued file plays it: the transport steps by chapter and by frame, the file's chapters are listed
-beside the facts MakeMKV recorded about the title it came from, and the audio and subtitle menus
-switch tracks — which is how a commentary is told from the main mix. Assigning itself is not built
-yet.
+queued file opens it paused on its first frame, or playing if Playback in Settings says so: the
+transport steps by chapter and by frame and the scrubber seeks as it is dragged, the file's chapters
+are listed beside the facts MakeMKV recorded about the title it came from, and the audio and
+subtitle menus switch tracks — which is how a commentary is told from the main mix. The video is
+shown at its own shape, so black bars on screen are in the picture and never padding. Assigning
+itself is not built yet.
 
 The Assign queue and the import history are kept in `~/Library/Application Support/smddb Ingest/state.json`,
 rewritten whole on every change. A scanned disc is fingerprinted from its mounted volume the way

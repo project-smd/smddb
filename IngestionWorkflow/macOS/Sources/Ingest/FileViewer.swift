@@ -17,8 +17,12 @@ struct FileViewer: View {
         VStack(spacing: 0) {
             heading
             Divider()
+            // The video view is given the picture's own shape, fitted to the space, so VLC has no
+            // room to letterbox: black bars on screen are in the picture, and the space either
+            // side is the window's colour. Before the shape is known, a placeholder shape.
             ZStack {
                 VideoSurface(view: player.videoView)
+                    .aspectRatio(player.videoAspectRatio ?? 16 / 9, contentMode: .fit)
                 if let failure = player.failure {
                     failureOverlay(failure)
                 }
@@ -73,10 +77,10 @@ struct FileViewer: View {
 /// The player's video view, handed to SwiftUI as is. It belongs to the player, so a rebuilt SwiftUI
 /// tree gets the same one back and playback carries on.
 private struct VideoSurface: NSViewRepresentable {
-    let view: VLCVideoView
+    let view: FilePlayer.VideoHostView
 
-    func makeNSView(context: Context) -> VLCVideoView { view }
-    func updateNSView(_ nsView: VLCVideoView, context: Context) {}
+    func makeNSView(context: Context) -> FilePlayer.VideoHostView { view }
+    func updateNSView(_ nsView: FilePlayer.VideoHostView, context: Context) {}
 }
 
 /// Play and pause, chapter and frame steps, a scrubber, and the audio and subtitle track menus.
@@ -124,9 +128,6 @@ private struct TransportBar: View {
                 .frame(minWidth: 64, alignment: .trailing)
             Slider(value: scrubBinding, in: 0...Double(max(player.lengthMilliseconds, 1))) { editing in
                 scrubbing = editing
-                if !editing {
-                    player.seek(toMilliseconds: Int(scrubMilliseconds))
-                }
             }
             .disabled(player.lengthMilliseconds == 0)
             Text("−" + Timecode.string(milliseconds: max(player.lengthMilliseconds - shownMilliseconds, 0)))
@@ -151,10 +152,15 @@ private struct TransportBar: View {
         scrubbing ? Int(scrubMilliseconds) : player.timeMilliseconds
     }
 
+    /// Seeks as the knob moves, so the picture follows the drag; while dragging, the knob is where
+    /// the drag put it rather than where the player has got to.
     private var scrubBinding: Binding<Double> {
         Binding(
             get: { scrubbing ? scrubMilliseconds : Double(player.timeMilliseconds) },
-            set: { scrubMilliseconds = $0 }
+            set: {
+                scrubMilliseconds = $0
+                player.seek(toMilliseconds: Int($0))
+            }
         )
     }
 

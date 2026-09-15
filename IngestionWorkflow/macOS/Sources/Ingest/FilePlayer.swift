@@ -41,7 +41,7 @@ final class FilePlayer {
 
     /// The view the video is drawn into. Owned here rather than by the SwiftUI view so it survives
     /// the view being rebuilt.
-    let videoView: VLCVideoView
+    let videoView: VideoHostView
     @ObservationIgnored private let player: VLCMediaPlayer
     /// VLCKit holds its delegate weakly; this keeps it alive.
     @ObservationIgnored private let events: Events
@@ -57,10 +57,17 @@ final class FilePlayer {
     private(set) var currentChapterIndex: Int?
     private(set) var audioTracks: [Track] = []
     private(set) var subtitleTracks: [Track] = []
+    /// Set when a file is opened paused. libvlc's start-paused stops on the first frame, and
+    /// whether that frame has been drawn by then is not relied on: the first pause is answered
+    /// with a seek to the start, which draws whatever is there.
+    @ObservationIgnored private var firstFrameOwed = false
+    /// Width over height of the picture as VLC will draw it, sample aspect applied, once the video
+    /// track is known. The view is given exactly this shape so that VLC never letterboxes into it:
+    /// any black bars on screen are then in the picture, and any padding is the window's.
+    private(set) var videoAspectRatio: Double?
 
     init() {
-        videoView = VLCVideoView()
-        videoView.backColor = .black
+        videoView = VideoHostView()
         // VLCKit's default macOS video output draws through an NSOpenGLView it adds to the video
         // view. Inside a SwiftUI hierarchy, which is layer-backed throughout, AppKit drives that
         // view's drawing from its backing layer's display pass, which reaches libvlc's renderer
@@ -68,7 +75,7 @@ final class FilePlayer {
         // in a CAOpenGLLayer on Core Animation's terms, and is the one to use here. The option goes
         // after VLCKit's defaults, so it overrides the `--vout=macosx` among them.
         player = VLCMediaPlayer(library: VLCLibrary(options: ["--vout=caopengllayer"]))
-        player.setVideoView(videoView)
+        player.drawable = videoView
         events = Events()
         events.player = self
         player.delegate = events
@@ -76,9 +83,9 @@ final class FilePlayer {
         player.timeChangeUpdateInterval = 0.25
     }
 
-    /// Open the file and start playing it. Playing rather than pausing on the first frame because
-    /// the point of selecting a file is to see what it is, and VLC shows nothing until it plays.
-    func load(_ url: URL) {
+    /// Open the file: playing, or paused on its first frame. VLC shows nothing until it plays, so
+    /// the paused form is libvlc's own `start-paused`, which plays up to the first frame and stops.
+    func load(_ url: URL, autoplay: Bool) {
         guard url != self.url else { return }
         player.stop()
         self.url = url
@@ -90,6 +97,10 @@ final class FilePlayer {
         guard let media = VLCMedia(url: url) else {
             failure = .cannotPlay
             return
+        }
+        if !autoplay {
+            media.addOption(":start-paused")
+            firstFrameOwed = true
         }
         player.media = media
         player.play()
@@ -110,6 +121,7 @@ final class FilePlayer {
         currentChapterIndex = nil
         audioTracks = []
         subtitleTracks = []
+        videoAspectRatio = nil
     }
 
     // MARK: Transport
@@ -185,6 +197,10 @@ final class FilePlayer {
         if player.state == .error {
             failure = .cannotPlay
         }
+        if player.state == .paused, firstFrameOwed {
+            firstFrameOwed = false
+            player.time = VLCTime(int: 0)
+        }
     }
 
     private func refreshTime() {
@@ -221,6 +237,15 @@ final class FilePlayer {
     private func refreshTracks() {
         audioTracks = FilePlayer.tracks(player.audioTracks)
         subtitleTracks = FilePlayer.tracks(player.textTracks)
+        // The player's track, not the media's: the decoder corrects the container's aspect once
+        // it has read the stream, and the player's tracks carry the correction.
+        if let video = player.videoTracks.first(where: \.isSelected)?.video ?? player.videoTracks.first?.video,
+           video.width > 0, video.height > 0 {
+            let sampleAspect = video.sourceAspectRatio > 0 && video.sourceAspectRatioDenominator > 0
+                ? Double(video.sourceAspectRatio) / Double(video.sourceAspectRatioDenominator)
+                : 1
+            videoAspectRatio = Double(video.width) * sampleAspect / Double(video.height)
+        }
     }
 
     private static func tracks(_ tracks: [VLCMediaPlayer.Track]) -> [Track] {
@@ -233,6 +258,22 @@ final class FilePlayer {
                 isSelected: track.isSelected
             )
         }
+    }
+
+    /// The view libvlc is handed to draw into: a plain view, which is all libvlc needs to add its
+    /// own views to, clipped to its bounds. The clipping matters. libvlc's views paint black, and
+    /// inside a SwiftUI hierarchy, which is layer-backed throughout, that black lands over an area
+    /// that is not theirs — the whole pane above the transport, heading included — and nothing
+    /// repaints it. Clipping at the view libvlc was given keeps its drawing inside the picture.
+    final class VideoHostView: NSView {
+        init() {
+            super.init(frame: .zero)
+            wantsLayer = true
+            layer?.masksToBounds = true
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { nil }
     }
 
     /// VLCKit's delegate. libvlc raises events on its own threads, and VLCKit forwards them on
@@ -266,6 +307,10 @@ final class FilePlayer {
         }
 
         func mediaPlayerTrackAdded(_ trackId: String, with trackType: VLCMedia.TrackType) {
+            onMain { $0.refreshTracks() }
+        }
+
+        func mediaPlayerTrackUpdated(_ trackId: String, with trackType: VLCMedia.TrackType) {
             onMain { $0.refreshTracks() }
         }
 
