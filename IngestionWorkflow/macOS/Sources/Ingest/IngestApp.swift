@@ -29,9 +29,10 @@ struct IngestApp: App {
     }
 }
 
-/// Run as a bare SwiftPM executable there is no app bundle, so the process starts as an accessory and
-/// never takes focus. Promoting it to a regular app gives it a Dock icon, a menu bar, and a window
-/// that comes to the front.
+/// Run as `Ingest.app` this changes nothing: the bundle's Info.plist makes it a regular app. Run as
+/// the bare executable — `swift run Ingest`, which still works once `Scripts/build-app.sh` has staged
+/// VLCKit — there is no bundle, so the process starts as an accessory and never takes focus.
+/// Promoting it gives it a Dock icon, a menu bar, and a window that comes to the front.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)

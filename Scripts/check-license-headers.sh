@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 the smddb project authors
 #
-# Verify every tracked Markdown and Swift file carries the SPDX licence header.
+# Verify every tracked Markdown, Swift, shell and property list file carries the SPDX licence header.
 #
 # Headers are checked rather than merely applied once because the failure is silent: nothing else in
 # the toolchain looks, so a file written without one is wrong in a way nothing would ever mention.
@@ -19,13 +21,21 @@ project="smddb"
 fail=0
 while IFS= read -r file; do
     case "$file" in
-        *.md)
+        *.md|*.plist)
             spdx='<!-- SPDX-License-Identifier: Apache-2.0 -->'
             copyright="<!-- Copyright (c) [0-9]\{4\} the ${project} project authors -->"
             # The header is the top of the file. A little slack, so a document may carry an editor
-            # directive or a blank line above it, but not so much that it can drift into the prose.
+            # directive or a blank line above it — or a property list its XML and DOCTYPE lines —
+            # but not so much that it can drift into the prose.
             spdx_within=3
             copyright_within=4
+            ;;
+        *.sh)
+            spdx='# SPDX-License-Identifier: Apache-2.0'
+            copyright="# Copyright (c) [0-9]\{4\} the ${project} project authors"
+            # After the shebang, which must stay on line 1.
+            spdx_within=2
+            copyright_within=3
             ;;
         *.swift)
             spdx='// SPDX-License-Identifier: Apache-2.0'
@@ -48,14 +58,15 @@ while IFS= read -r file; do
         echo "missing copyright line: $file"
         fail=1
     fi
-done < <(git ls-files '*.md' '*.swift')
+done < <(git ls-files '*.md' '*.swift' '*.sh' '*.plist')
 
 if [ "$fail" -ne 0 ]; then
     cat <<USAGE
 
-Add to the top of each file listed above, before the title — in Markdown as HTML comments, which
-every renderer leaves out of the page; in Swift as line comments, after any \`// swift-tools-version:\`
-line, which must stay first:
+Add to the top of each file listed above, before the title — in Markdown and property lists as
+HTML comments, which every renderer leaves out of the page (in a plist, after its XML and DOCTYPE
+lines); in Swift as line comments, after any \`// swift-tools-version:\` line, which must stay
+first; in shell as comments after the shebang:
 
     <!-- SPDX-License-Identifier: Apache-2.0 -->
     <!-- Copyright (c) $(date +%Y) the ${project} project authors -->
@@ -63,8 +74,11 @@ line, which must stay first:
     // SPDX-License-Identifier: Apache-2.0
     // Copyright (c) $(date +%Y) the ${project} project authors
 
+    # SPDX-License-Identifier: Apache-2.0
+    # Copyright (c) $(date +%Y) the ${project} project authors
+
 USAGE
     exit 1
 fi
 
-echo "licence headers OK ($(git ls-files '*.md' '*.swift' | wc -l | tr -d ' ') files)"
+echo "licence headers OK ($(git ls-files '*.md' '*.swift' '*.sh' '*.plist' | wc -l | tr -d ' ') files)"

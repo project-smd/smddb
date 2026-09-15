@@ -1,5 +1,5 @@
 {
-  "originHash" : "bab05d2e05f7186a3d58eee58ff33ea86257303a315225debe3afb32b80a045c",
+  "originHash" : "eebfc6741779a2c6d5f864935a1e7cf91e468ea00d4711958a64ef949eb8e42f",
   "pins" : [
     {
       "identity" : "makemkvkit",
@@ -8,6 +8,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "06087684afee8f7f9b5b28a5fd518a6c0b1f9b33"
+      }
+    },
+    {
+      "identity" : "vlckit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://code.videolan.org/videolan/VLCKit.git",
+      "state" : {
+        "revision" : "6cbc4e7b248aa51ec0906697abb30ecae47194b7",
+        "version" : "4.0.0-a24"
       }
     }
   ],

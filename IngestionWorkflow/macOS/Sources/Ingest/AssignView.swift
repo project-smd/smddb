@@ -4,23 +4,24 @@
 import MakeMKVRobot
 import SwiftUI
 
-/// The Assign stage: a queue of imported files in a drawer on the right, and a detail area that,
-/// for now, only says what to do. Assigning itself — which container, which entry, which cut — is
-/// the next step and lands here.
+/// The Assign stage: a queue of imported files in a drawer on the right, and the selected file
+/// playing in the detail area, with its chapters and the disc facts beside it. Assigning itself —
+/// which container, which entry, which cut — is the next step and lands here.
 @MainActor
 struct AssignView: View {
     @Environment(IngestModel.self) private var model
     @State private var selected: ImportedItem.ID?
     @State private var queuePresented = true
+    @State private var player = FilePlayer()
+
+    private var selectedItem: ImportedItem? {
+        model.assignQueue.first(where: { $0.id == selected })
+    }
 
     var body: some View {
         Group {
-            if let item = model.assignQueue.first(where: { $0.id == selected }) {
-                ContentUnavailableView {
-                    Label(item.fileName, systemImage: "film")
-                } description: {
-                    Text("From \(item.discName), title \(item.title.index). Assigning is not built yet.")
-                }
+            if let item = selectedItem {
+                FileViewer(item: item, player: player)
             } else if model.assignQueue.isEmpty {
                 ContentUnavailableView("Nothing to assign", systemImage: "tag", description: Text("Files arrive here as Import finishes each one."))
             } else {
@@ -28,6 +29,14 @@ struct AssignView: View {
             }
         }
         .navigationTitle("Assign")
+        .onChange(of: selectedItem?.fileURL, initial: true) { _, url in
+            if let url {
+                player.load(url)
+            } else {
+                player.stop()
+            }
+        }
+        .onDisappear { player.stop() }
         .inspector(isPresented: $queuePresented) {
             QueueDrawer(selected: $selected)
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 480)

@@ -11,17 +11,28 @@ Everything after that in the ingestion flow — fingerprint, identify, bind, wri
 not here yet. This exists so there is a working scan-and-rip loop to hang those steps off.
 
 ```sh
-swift run Ingest
+open "$(Scripts/build-app.sh)"
 ```
+
+The script builds the package and wraps the executable as `Ingest.app` under `.build`, printing
+the bundle's path. A bundle rather than `swift run` because the viewer plays through
+[VLCKit](https://code.videolan.org/videolan/VLCKit), a dynamic framework that SwiftPM links but
+does not put anywhere the executable can load it from; the bundle carries it in `Contents/Frameworks`.
+The script also links the framework where SwiftPM's own products look for it, so after it has run
+once, `swift test` and `swift run Ingest` work as well. `-c release` builds that configuration.
 
 Three launch arguments exist for working on a screen without going through the ones before it:
 `--scan N` scans drive N at startup, `--stage assign` opens on that stage, and `--seed-queue N`
-puts N made-up files in the Assign queue.
+puts N made-up files in the Assign queue. Pass them through `open` as
+`open "$(Scripts/build-app.sh)" --args --stage assign`.
 
 The window is a sidebar of the workflow's stages and the selected stage's own view. **Import** is
 the scan-and-rip loop; **Assign**, which says what each ripped file is, holds a queue that files
-join one by one as Import finishes each of them, with the count badged on the sidebar. Assign is
-currently the queue in a drawer and nothing else.
+join one by one as Import finishes each of them, with the count badged on the sidebar. Selecting a
+queued file plays it: the transport steps by chapter and by frame, the file's chapters are listed
+beside the facts MakeMKV recorded about the title it came from, and the audio and subtitle menus
+switch tracks — which is how a commentary is told from the main mix. Assigning itself is not built
+yet.
 
 The Assign queue and the import history are kept in `~/Library/Application Support/smddb Ingest/state.json`,
 rewritten whole on every change. A scanned disc is fingerprinted from its mounted volume the way
@@ -42,5 +53,6 @@ Needs MakeMKV installed at `/Applications/MakeMKV.app`, or `makemkvcon` on `PATH
 a drive, a folder holding a `BDMV` or `VIDEO_TS` tree (a MakeMKV backup), or an `.iso`; the last two
 work without a drive at all.
 
-The library dependency is [MakeMKVKit](https://github.com/project-smd/MakeMKVKit), tracked by its
-`main` branch until it has a release to pin to.
+The library dependencies are [MakeMKVKit](https://github.com/project-smd/MakeMKVKit), tracked by
+its `main` branch until it has a release to pin to, and VLCKit, pinned to an exact 4.0 prerelease
+tag because that line is still alpha. VLCKit is LGPL 2.1 and is used as a framework, unmodified.
