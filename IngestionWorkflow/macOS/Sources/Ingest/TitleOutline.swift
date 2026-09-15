@@ -162,15 +162,14 @@ struct TitleOutline: View {
             case .importing:
                 ProgressView().controlSize(.mini)
                 Text("Importing…")
-            case .imported:
+            // A title imported this session and one imported before look the same: a green tick
+            // and the date, so the disc reads consistently however long ago each was taken.
+            case .imported(let date), .previouslyImported(let date):
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                Text("Imported")
+                Text("Imported \(date, format: .dateTime.day().month().year())")
             case .failed:
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
                 Text("Failed")
-            case .previouslyImported(let date):
-                Image(systemName: "checkmark.circle")
-                Text("Imported \(date, format: .dateTime.day().month().year())")
             }
         }
         .font(.callout)
