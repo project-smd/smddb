@@ -212,6 +212,16 @@ struct IngestTests {
         #expect([video, lossless, core, subtitle, forced].map { Preferences.keepTrack($0, defaults) } == [true, true, true, true, true])
     }
 
+    @Test func discFolderNameIsUniquePerDisc() {
+        let print = DiscFingerprint(format: .bluray, contentHash: "3386B3B98C8E6DC3EAFB33E2170B15D6", aacsDiscId: nil)
+        #expect(IngestStore.discFolderName(discName: "Doctor Who - S13 Disc 3", fingerprint: print) == "Doctor Who - S13 Disc 3 [3386B3B98C8E6DC3EAFB33E2170B15D6]")
+        // No fingerprint: the name alone.
+        #expect(IngestStore.discFolderName(discName: "Some Disc", fingerprint: nil) == "Some Disc")
+        // Path separators in the disc name are replaced, and an empty name has a fallback.
+        #expect(IngestStore.discFolderName(discName: "A/B: C", fingerprint: nil) == "A-B- C")
+        #expect(IngestStore.discFolderName(discName: "", fingerprint: nil) == "Disc")
+    }
+
     @Test func phaseBusyness() {
         #expect(!Phase.idle.isBusy)
         #expect(Phase.listingDrives.isBusy)
