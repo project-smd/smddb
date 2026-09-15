@@ -187,6 +187,31 @@ struct IngestTests {
         #expect(second.importStatus[7] != nil)
     }
 
+    @Test func keepTrackMirrorsTheExtractionRule() {
+        let defaults = UserDefaults(suiteName: "IngestTests.keepTrack")!
+        defer { defaults.removePersistentDomain(forName: "IngestTests.keepTrack") }
+        func track(_ kind: Int, flags: Int) -> Track {
+            Track(index: 0, attributes: [
+                .type: Attribute(id: .type, messageCode: kind, value: ""),
+                .streamFlags: Attribute(id: .streamFlags, messageCode: 0, value: String(flags)),
+            ])
+        }
+        let video = track(6201, flags: 0), lossless = track(6202, flags: 1024), core = track(6202, flags: 2304)
+        let subtitle = track(6203, flags: 0), forced = track(6203, flags: 6144)
+
+        defaults.set(false, forKey: Preferences.includeEmbeddedAudioTracks)
+        defaults.set(false, forKey: Preferences.includeSubtitles)
+        defaults.set(false, forKey: Preferences.includeEmbeddedSubtitleTracks)
+        #expect([video, lossless, core, subtitle, forced].map { Preferences.keepTrack($0, defaults) } == [true, true, false, false, false])
+
+        defaults.set(true, forKey: Preferences.includeSubtitles)
+        #expect([video, lossless, core, subtitle, forced].map { Preferences.keepTrack($0, defaults) } == [true, true, false, true, false])
+
+        defaults.set(true, forKey: Preferences.includeEmbeddedSubtitleTracks)
+        defaults.set(true, forKey: Preferences.includeEmbeddedAudioTracks)
+        #expect([video, lossless, core, subtitle, forced].map { Preferences.keepTrack($0, defaults) } == [true, true, true, true, true])
+    }
+
     @Test func phaseBusyness() {
         #expect(!Phase.idle.isBusy)
         #expect(Phase.listingDrives.isBusy)

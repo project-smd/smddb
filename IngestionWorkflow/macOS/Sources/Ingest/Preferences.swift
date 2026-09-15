@@ -3,6 +3,7 @@
 
 import AppKit
 import MakeMKV
+import MakeMKVRobot
 import SwiftUI
 
 /// The preference keys, one place, so the settings window and the model agree on spelling and on
@@ -15,6 +16,10 @@ enum Preferences {
 
     // Scanning
     static let minimumTitleLength = "minimumTitleLength"
+    /// Keep one MakeMKV engine running and the disc open between scanning and importing, through
+    /// the protocol MakeMKV's own GUI uses, so importing several titles reads the disc once. Off by
+    /// default: the protocol is MakeMKV's and unpublished, where robot mode is documented.
+    static let useEngineSession = "useEngineSession"
 
     // Extraction
     static let includeEmbeddedAudioTracks = "includeEmbeddedAudioTracks"
@@ -42,12 +47,24 @@ enum Preferences {
         return SelectionRule(actions)
     }
 
+    /// The extraction settings as a per-track decision, for the engine path, where tracks are
+    /// ticked one by one rather than selected by rule. Mirrors `extractionRule` exactly.
+    static func keepTrack(_ track: Track, _ defaults: UserDefaults = .standard) -> Bool {
+        if track.isCore && !defaults.bool(forKey: includeEmbeddedAudioTracks) { return false }
+        if track.kind == .subtitles {
+            if !defaults.bool(forKey: includeSubtitles) { return false }
+            if track.isForcedOnly && !defaults.bool(forKey: includeEmbeddedSubtitleTracks) { return false }
+        }
+        return true
+    }
+
     /// Registered at launch, so a key that has never been set reads as its default rather than as
     /// zero or false, and the defaults are stated once rather than at every read.
     static func register() {
         UserDefaults.standard.register(defaults: [
             // MakeMKV's own default; TheDiscDb's contributors scan with it, so titles line up with theirs.
             minimumTitleLength: 120,
+            useEngineSession: false,
             // The lossy core inside a lossless track is the same audio again, smaller and worse.
             includeEmbeddedAudioTracks: false,
             includeSubtitles: true,
@@ -119,9 +136,16 @@ struct IngestionSettings: View {
 
 struct ScanningSettings: View {
     @AppStorage(Preferences.minimumTitleLength) private var minimumTitleLength = 120
+    @AppStorage(Preferences.useEngineSession) private var useEngineSession = false
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Keep MakeMKV open between operations", isOn: $useEngineSession)
+                Text("Talks to the MakeMKV engine the way its own window does, so a disc is read once for a scan and every import from it, instead of once per title. Uses a protocol MakeMKV does not document; off, the tool uses the documented command line. Takes effect at the next scan.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             LabeledContent("Minimum title length") {
                 HStack {
                     // No title on the field: inside a grouped form a title becomes a second label.

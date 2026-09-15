@@ -15,7 +15,10 @@ struct IngestApp: App {
         WindowGroup {
             ContentView()
                 .environment(model)
-                .task { await model.start() }
+                .task {
+                    AppDelegate.model = model
+                    await model.start()
+                }
         }
         .defaultSize(width: 1100, height: 760)
 
@@ -33,6 +36,18 @@ struct IngestApp: App {
 /// never takes focus. Promoting it to a regular app gives it a Dock icon, a menu bar, and a window
 /// that comes to the front.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Set by the app so the engine, if one is running, is told to quit rather than killed.
+    @MainActor static var model: IngestModel?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model = Self.model else { return .terminateNow }
+        Task { @MainActor in
+            await model.shutdown()
+            NSApplication.shared.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)

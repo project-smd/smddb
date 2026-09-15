@@ -59,6 +59,18 @@ final class IngestModel {
     private(set) var makeMKV: MakeMKV?
     private(set) var startupError: String?
 
+    /// The engine kept open between operations, when the Scanning preference asks for it. Started
+    /// on the first operation that wants it and kept until the app quits; `nil` means robot mode.
+    private var engine: EngineSession?
+    /// Whether the scan in hand was made through the engine, which is where its titles must then
+    /// be imported from: the engine's disc is the one that is open.
+    private(set) var scanUsedEngine = false
+
+    var useEngineSession: Bool {
+        _ = preferencesVersion
+        return UserDefaults.standard.bool(forKey: Preferences.useEngineSession)
+    }
+
     private(set) var drives: [Drive] = []
     var picked: PickedSource?
     /// Read at scan time from the preferences, which own it; the settings window is where it is set.
@@ -198,6 +210,37 @@ final class IngestModel {
         await refreshDrives()
     }
 
+    // MARK: - Engine
+
+    /// The running engine, started on first use. Its messages and progress land where robot mode's
+    /// do, so the rest of the window does not know which path is in use.
+    private func engineSession() async throws -> EngineSession {
+        if let engine { return engine }
+        guard let makeMKV else { throw MakeMKVError.executableNotFound(searched: []) }
+        let session = EngineSession(executable: makeMKV.executable)
+        await session.setEventHandler { [weak self] event in
+            Task { @MainActor in
+                guard let self else { return }
+                switch event.kind {
+                case .message(let message): self.record([message])
+                case .progress(let progress): self.progress = progress
+                case .currentInfo, .jobStarted, .jobFinished: break
+                }
+            }
+        }
+        try await session.start()
+        let version = try await session.appString(.version) ?? "?"
+        note("MakeMKV engine \(version) started and kept open")
+        engine = session
+        return session
+    }
+
+    /// Quit the engine, if one is running. Called when the app exits.
+    func shutdown() async {
+        await engine?.quit()
+        engine = nil
+    }
+
     func refreshDrives() async {
         guard let makeMKV, !phase.isBusy else { return }
         phase = .listingDrives
@@ -205,7 +248,7 @@ final class IngestModel {
         // listing starts its worker, and the worker owns the phase from then on.
         defer { if phase == .listingDrives { phase = .idle } }
         do {
-            drives = try await makeMKV.drives().filter(\.isPresent)
+            drives = try await (useEngineSession ? engineSession().drives() : makeMKV.drives()).filter(\.isPresent)
             lastListed = .now
             let withDisc = drives.filter(\.hasDisc)
             note("\(drives.count) drive(s), \(withDisc.count) with a disc")
@@ -231,6 +274,9 @@ final class IngestModel {
     /// table is re-read on the way, since the disc has usually been swapped by now.
     func discardScan() async {
         guard !phase.isBusy else { return }
+        if scanUsedEngine, let engine {
+            try? await engine.close()
+        }
         scan = nil
         selectedTitles = []
         importStatus = [:]
@@ -259,9 +305,21 @@ final class IngestModel {
         importStatus = [:]
         note("Scanning \(picked.source.argument) with minimum length \(minimumTitleLength)s")
         do {
-            // Messages are logged as they arrive, so the log moves while the disc is being read.
-            let result = try await makeMKV.scan(picked.source, settings: ScanSettings(minimumTitleLength: minimumTitleLength)) { [weak self] line in
-                Task { @MainActor in self?.record(line) }
+            let settings = ScanSettings(minimumTitleLength: minimumTitleLength)
+            let result: Scan
+            if useEngineSession {
+                // The engine opens the disc and keeps it open; the titles it hands back are the
+                // same shape a robot scan gives, and imports then come from the open disc.
+                let session = try await engineSession()
+                let disc = try await session.open(picked.source, minimumTitleLength: minimumTitleLength)
+                result = Scan(source: picked.source, settings: settings, disc: disc)
+                scanUsedEngine = true
+            } else {
+                // Messages are logged as they arrive, so the log moves while the disc is being read.
+                result = try await makeMKV.scan(picked.source, settings: settings) { [weak self] line in
+                    Task { @MainActor in self?.record(line) }
+                }
+                scanUsedEngine = false
             }
             scan = result
             // MakeMKV ticks every title it lists; so do we, minus what this disc's history says
@@ -427,14 +485,32 @@ final class IngestModel {
             importStatus[index] = .importing
             note("Importing title \(index) (\(title.sourceIdentifier ?? "?")) to \(destination.path)")
             do {
-                let result = try await makeMKV.rip(title, from: scan, to: destination, profile: profile) { [weak self] line in
-                    Task { @MainActor in self?.record(line) }
-                } progress: { [weak self] progress in
-                    Task { @MainActor in self?.progress = progress }
+                let outputURL: URL
+                if scanUsedEngine, let engine {
+                    // One title per job from the disc the engine still has open: no re-read, and
+                    // each file is complete when its job ends, so the queue moves file by file.
+                    for other in scan.titles {
+                        try await engine.setSelected(other.index == index, title: other.index)
+                    }
+                    for track in title.tracks {
+                        try await engine.setSelected(Preferences.keepTrack(track), title: index, track: track.index)
+                    }
+                    try await engine.saveSelectedTitles(to: destination)
+                    outputURL = destination.appendingPathComponent(title.outputFileName ?? "title\(index).mkv")
+                    guard FileManager.default.fileExists(atPath: outputURL.path) else {
+                        throw MakeMKVError.outputMissing(outputURL, messages: [])
+                    }
+                } else {
+                    let result = try await makeMKV.rip(title, from: scan, to: destination, profile: profile) { [weak self] line in
+                        Task { @MainActor in self?.record(line) }
+                    } progress: { [weak self] progress in
+                        Task { @MainActor in self?.progress = progress }
+                    }
+                    outputURL = result.outputURL
                 }
-                note("Wrote \(result.outputURL.lastPathComponent)")
+                note("Wrote \(outputURL.lastPathComponent)")
                 importStatus[index] = .imported
-                recordImport(of: title, from: scan, at: result.outputURL)
+                recordImport(of: title, from: scan, at: outputURL)
             } catch MakeMKVError.processFailed(let status, let messages) {
                 record(messages)
                 importStatus[index] = .failed
