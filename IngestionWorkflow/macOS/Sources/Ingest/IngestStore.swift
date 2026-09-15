@@ -51,6 +51,19 @@ struct IngestStore {
         fingerprint.map { "hash:" + $0.contentHash } ?? "name:" + discName
     }
 
+    /// The subfolder within the output folder that a disc's files go in, so two discs with the
+    /// same MakeMKV filename for a title do not overwrite each other. Shaped "<name> [<hash>]",
+    /// the content hash being the disc's thumbprint; without a fingerprint (an unmountable disc or
+    /// an ISO) it is the name alone. Characters that are path separators on macOS are replaced.
+    static func discFolderName(discName: String, fingerprint: DiscFingerprint?) -> String {
+        let safe = discName
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespaces)
+        let name = safe.isEmpty ? "Disc" : safe
+        return fingerprint.map { "\(name) [\($0.contentHash)]" } ?? name
+    }
+
     /// The key a title is filed under within a disc: its natural identity, which survives a change
     /// of minimum length where MakeMKV's index does not.
     static func titleKey(_ title: Title) -> String {

@@ -476,11 +476,16 @@ final class IngestModel {
             importBatchDone = 0
             Task { await refreshIfWanted() }
         }
-        guard let makeMKV, let destination else { return }
+        guard let makeMKV, let outputFolder = destination else { return }
+        // Files go in a subfolder unique to the disc, so the same MakeMKV filename on two discs
+        // does not clash: "<disc name> [<thumbprint>]".
+        let discFolder = IngestStore.discFolderName(discName: scan.disc?.name ?? "Disc", fingerprint: fingerprint)
+        let destination = outputFolder.appendingPathComponent(discFolder, isDirectory: true)
         // The extraction settings, read once for the whole batch so every file in it keeps the same
         // tracks, and passed as a profile so the result does not depend on this machine's MakeMKV
         // preferences.
         let profile = ConversionProfile(name: "smddb Ingest", selection: Preferences.extractionRule())
+        note("Importing into \(discFolder)")
         note("Track selection: \(profile.selection)")
         while !importQueue.isEmpty {
             let index = importQueue.removeFirst()
