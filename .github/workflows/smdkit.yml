@@ -16,7 +16,7 @@ jobs:
       # day it is released, so the pin here never waits on an action's version list.
       - uses: vapor/swiftly-action@v0.2
         with:
-          toolchain: "6.4"
+          toolchain: "6.4.0"
       # On Linux rather than macOS deliberately: the package has nothing Apple-only in it, and
       # the validator that will run here has to keep it that way.
       - name: Test
