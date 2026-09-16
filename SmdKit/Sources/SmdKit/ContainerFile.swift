@@ -125,6 +125,17 @@ public enum ContainerFile {
     /// Reads a container document. `expecting` is the id the file's name carries, when it has one;
     /// a document whose root disagrees with it is refused.
     public static func container(from data: Data, expecting expected: ContainerID? = nil) throws -> Container {
+        // Well-formedness first, through the event parser. The document parser on Linux is
+        // libxml2 in recovery mode: a truncated file comes back as a document with the tags
+        // closed for it, which is not what was written and must not be read as if it were. The
+        // event parser notices on both platforms, but reports it differently — a false return
+        // on Darwin, a true return with `parserError` set on Linux — so both are checked.
+        let parser = XMLParser(data: data)
+        let parsed = parser.parse()
+        if let error = parser.parserError {
+            throw ContainerFileError.malformed(error.localizedDescription)
+        }
+        guard parsed else { throw ContainerFileError.malformed("not well-formed XML") }
         let document: XMLDocument
         do {
             document = try XMLDocument(data: data, options: [])
