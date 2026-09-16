@@ -12,9 +12,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - uses: swift-actions/setup-swift@v2
+      # swiftly rather than setup-swift: it installs any toolchain swift.org has released, the
+      # day it is released, so the pin here never waits on an action's version list.
+      - uses: vapor/swiftly-action@v0.2
         with:
-          swift-version: "6.4"
+          toolchain: "6.4"
       # On Linux rather than macOS deliberately: the package has nothing Apple-only in it, and
       # the validator that will run here has to keep it that way.
       - name: Test
