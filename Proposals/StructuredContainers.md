@@ -231,6 +231,14 @@ convention that would then also need documenting.
 Who* says **Story**, an anime release says **Volume**, a procedural says
 **Arc**. The parser branches on `type`; the UI prints `typeLabel`.
 
+`<year>` is the year a series began, a season aired or a film was released,
+and only those three types carry one: a serial or an episode takes its year
+from its season, and a collection has none. `inTitle="true"` on it says the
+year is part of the name — *Doctor Who (1963)* against *Doctor Who* — which is
+how a library folder and Emby's own naming tell the 1963 programme from the
+2005 one. The title element holds the title alone either way, so a client that
+wants the bare name has it without parsing brackets out of a string.
+
 `format="1"` is present from the first file written. A format that will be
 extended and has no version marker cannot be extended safely, and adding the
 marker later means every file predating it is ambiguous.
@@ -280,6 +288,24 @@ should catch, not a configuration.
 The pointer is worth more than the convention it replaces: the editing UI needs
 to know which file to open, and a later migration needs to know which facts came
 from where.
+
+### What `<outline>` is for
+
+`<outline>` answers one question: why would a viewer choose this? The hook of a
+story, what an extra has in it, what a cut offers that the default does not. One
+sentence, in the contributor's own words, shown under the title wherever a
+client lists the thing. It is not identification. "Season 14, story 6, six
+parts, 1977" is already in the tree and the provider record, and a tool that
+wants that line constructs it rather than reading a second copy that goes stale
+the first time a story is renumbered.
+
+The rule above says where it may appear. A container carries one only where
+nothing else answers the question, which is why the serial at the top of this
+document has one and the season does not: `season.nfo` holds the provider's
+answer. An alternative always may, because no provider models a cut, and the
+difference between the omnibus and the broadcast version is exactly what the
+viewer choosing between them wants told. An item carries one on the same terms
+as its title, only when no provider has one for it.
 
 ### No `<thumb>`, no `<bif>`, no per-entry asset list
 

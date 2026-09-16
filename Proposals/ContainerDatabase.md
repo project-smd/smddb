@@ -256,8 +256,15 @@ Two of the keys are borrowed deliberately, so that lookups interoperate:
   and across MakeMKV versions; the playlist does not.
 
 Everything else — ContainerId, SequenceId, EntryId, AlternativeId, FeatureId —
-is minted here. A UUID is fine; what matters is that it is issued once and the
-same one comes back tomorrow.
+is minted here. What matters is that an id is issued once and the same one
+comes back tomorrow. A ContainerId is sixteen lowercase hex characters, 64
+random bits: random because a clone of the data repository mints ids without
+asking anyone, which rules out a sequence; sixteen characters rather than a
+UUID because the corpus is thousands of containers and the id is read in refs,
+file listings and URLs, where 36 characters is noise. At ten million containers
+the chance of any two colliding is about one in four hundred thousand, and a
+collision is two files wanting one name, which a pull request shows rather than
+hides. A reader validates the shape, not how it was drawn.
 
 ## Worked example
 
@@ -403,13 +410,21 @@ Sketched here and argued in full in `Hosting.md`, which supersedes this section
 on everything except the licence question below.
 
 An open-source project: the code on GitHub under Apache 2.0, as this repository
-is, and the data under a licence of the same temper. The nearest data-licence
-analogue to Apache's attribution requirement is CC BY 4.0, which asks for
-credit and nothing else; CC0 is the alternative if attribution turns out to
-deter contributors, and is what MusicBrainz chose for its core data. Either
-way the data is exported wholesale and regularly, because a store whose only
-copy is the one being served is a store that can disappear — TheDiscDb's MIT
-data repository is the right precedent.
+is, and the data dedicated to the public domain under CC0 1.0, in its own
+repository at `project-smd/data`. CC BY 4.0 was the first thought, as the
+nearest analogue to Apache's attribution requirement, and was set aside on
+three grounds: the data is almost entirely fact, which carries no copyright to
+demand credit for; it has to move freely in both directions with TheDiscDb
+(MIT) and Wikidata (CC0); and a dedication can never need relicensing, which
+removes the one deadline that depended on everyone's consent. Attribution is
+asked for in the data repository's README and not required. Contributions are
+certified per commit, in the data repository's `CONTRIBUTING.md`, which also
+draws the line the dedication depends on: facts may be copied from anywhere,
+prose must be the contributor's own. Either way the data is exported wholesale
+and regularly, because a store whose only copy is the one being served is a
+store that can disappear — TheDiscDb's MIT data repository is the right
+precedent, and TheTVDB, contributor-built and then closed behind a paid API, is
+the one this arrangement is designed to rule out.
 
 ## Region variants
 
@@ -431,7 +446,13 @@ master in two boxes — they share a Disc row, because the fingerprint says so.
   completeness.
 - **Not a metadata database.** Cast, ratings, plots and air dates stay with the
   providers, exactly as the sidecar proposal keeps them in the NFO. An entry
-  carries a title only when no provider has one for it.
+  carries a title only when no provider has one for it, and an outline on the
+  same terms. The outline is the one line of prose the model holds: why a
+  viewer would choose the thing, in the contributor's own words, and never a
+  label the tree could construct, such as a story's number or its part count.
+  Alternatives always carry one, since no provider models a cut. It is the
+  prose the licence section's rule is about — facts may be copied from
+  anywhere, this must be the contributor's own.
 - **Not a ripping tool.** The flow above is what a tool does with the database;
   the database does not scan discs.
 - **Not a graph.** One home per entry, as in the sidecar; a ref, including one

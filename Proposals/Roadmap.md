@@ -162,8 +162,8 @@ expensive. Recording when, rather than treating them all as pending:
 | TheDiscDb attribution | First commit that ingests its data | MIT terms arrive with the data whatever licence you eventually pick for your own |
 | Whether to contribute upstream to TheDiscDb instead | During phase 2 | If it would carry an `EntryId`, phase 3 shrinks substantially. Have the conversation when there is real data to show and before building what it might obviate |
 | Read platform | End of phase 2 | Deliberately late. Nothing before this needs it decided |
-| Data licence — CC BY 4.0 or CC0 | Before the **second** contributor | While you are the only one, the data is yours and freely relicensable. After that it needs everyone's consent, and they become unreachable |
-| DCO capture, and where the consent record lives | Same | It is what makes the licence enforceable rather than merely stated |
+| ~~Data licence — CC BY 4.0 or CC0~~ | Decided, September 2026 | CC0 1.0, in `project-smd/data`. See the licence section of `ContainerDatabase.md` for the grounds |
+| ~~DCO capture, and where the consent record lives~~ | Decided, September 2026 | A per-commit sign-off against the data repository's own certificate, in its `CONTRIBUTING.md`. The record is the git history, which forks with the data |
 | Contributor attribution — bot-opened pull requests or authorised as the contributor | Before the contribution API ships | It decides how exposed the choice of forge is, and therefore how much the platform-dependence question matters |
 
 ## The risk this plan is managing

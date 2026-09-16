@@ -1,0 +1,22 @@
+name: SmdKit
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  Test:
+    name: Build and test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.1"
+      # On Linux rather than macOS deliberately: the package has nothing Apple-only in it, and
+      # the validator that will run here has to keep it that way.
+      - name: Test
+        run: swift test
+        working-directory: SmdKit
