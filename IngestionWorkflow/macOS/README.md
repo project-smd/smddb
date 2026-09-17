@@ -21,10 +21,10 @@ does not put anywhere the executable can load it from; the bundle carries it in 
 The script also links the framework where SwiftPM's own products look for it, so after it has run
 once, `swift test` and `swift run Ingest` work as well. `-c release` builds that configuration.
 
-Three launch arguments exist for working on a screen without going through the ones before it:
-`--scan N` scans drive N at startup, `--stage assign` opens on that stage, and `--seed-queue N`
-puts N made-up files in the Assign queue. Pass them through `open` as
-`open "$(Scripts/build-app.sh)" --args --stage assign`.
+Four launch arguments exist for working on a screen without going through the ones before it:
+`--scan N` scans drive N at startup, `--stage assign` opens on that stage, `--seed-queue N`
+puts N made-up files in the Assign queue, and `--containers` opens the Containers window. Pass
+them through `open` as `open "$(Scripts/build-app.sh)" --args --stage assign`.
 
 The window is a sidebar of the workflow's stages and the selected stage's own view. **Import** is
 the scan-and-rip loop; **Assign**, which says what each ripped file is, holds a queue that files
@@ -35,6 +35,34 @@ are listed beside the facts MakeMKV recorded about the title it came from, and t
 subtitle menus switch tracks — which is how a commentary is told from the main mix. The video is
 shown at its own shape, so black bars on screen are in the picture and never padding. Assigning
 itself is not built yet.
+
+**Containers**, under the View menu, is a window of its own onto the database: an outline of every
+container in the repository, series at the top, and under each one four groups — its alternatives,
+its features, its sequences and its extras — each opening to what it holds, with the selected
+row's facts beside. A child container is an item of the sequence or the extras that hold it, and
+opens the same way. Every group's header has a + that adds to the end of that group, and a
+sequence's own + adds an item to it: an episode, a film or a featurette with a title, or a
+container, whose type is guessed from the parent's, a season inside a series and a serial inside a
+season. Dragging re-orders a group; ids are made from titles; the first alternative a container
+gets is the one played by default. Add Container… in the toolbar makes one at the top level.
+Selecting any row edits it beside the outline — a container's title, year and whether the year is
+shown in the title, type, type label, outline, whether it is listed, which alternative plays by
+default and where the extras are anchored; an alternative's, a feature's, a sequence's or an
+item's own fields; and, on containers and items, as many external references as providers know
+the thing, added and removed a row at a time. Nothing is written until Save (⌘S), and what would
+not validate — a sequence id that is not a slug, an alternative playing a sequence that is not
+there — is refused with the reason beneath the fields. Ids are shown and not edited, because other
+rows name their targets by them; renaming a sequence renames it in the alternatives that play it.
+That is the whole of authoring so far: nothing here is deleted once written apart from a reference
+or a participant, bindings to discs are not made, and neither is a container built from a
+provider's own record; those arrive with the identify and bind steps, which is when the discs say
+what shape they need. The window reads
+the repository folder chosen in Settings, and re-reads it each time the app comes to the front,
+since the folder is a git clone and changes under the tool.
+
+The container model, the file each container is kept as, and the repository behind them are
+[SmdKit](../../SmdKit), a package beside this one that the tool depends on by path; its README
+says what the files look like and why.
 
 The Assign queue and the import history are kept in `~/Library/Application Support/smddb Ingest/state.json`,
 rewritten whole on every change. A scanned disc is fingerprinted from its mounted volume the way

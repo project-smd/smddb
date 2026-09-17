@@ -17,6 +17,9 @@ let package = Package(
         // VideoLAN's own package: one xcframework for every Apple platform, LGPL 2.1, linked as a
         // framework. The 4.0 line is still alpha, so pin the exact prerelease tag rather than a range.
         .package(url: "https://code.videolan.org/videolan/VLCKit.git", exact: "4.0.0-a24"),
+        // The container model and the database behind it, kept apart from the app so that CI can
+        // read container files without resolving the two frameworks above.
+        .package(path: "../../SmdKit"),
     ],
     targets: [
         .executableTarget(
@@ -25,6 +28,7 @@ let package = Package(
                 .product(name: "MakeMKV", package: "MakeMKVKit"),
                 .product(name: "MakeMKVRobot", package: "MakeMKVKit"),
                 .product(name: "VLCKit", package: "VLCKit"),
+                .product(name: "SmdKit", package: "SmdKit"),
             ]
         ),
         .testTarget(name: "IngestTests", dependencies: ["Ingest"]),

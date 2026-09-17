@@ -8,6 +8,8 @@ import SwiftUI
 struct IngestApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = IngestModel()
+    @State private var library = ContainerLibrary()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         // No fixed title: the content sets it — "Ingest" on the drive list, the disc's name once
@@ -17,10 +19,31 @@ struct IngestApp: App {
                 .environment(model)
                 .task {
                     AppDelegate.model = model
+                    // `--containers` opens the Containers window at launch, for working on it
+                    // without going through the menu each time.
+                    if CommandLine.arguments.contains("--containers") {
+                        openWindow(id: ContainersWindow.id)
+                    }
                     await model.start()
                 }
         }
         .defaultSize(width: 1100, height: 760)
+        .commands {
+            CommandGroup(after: .sidebar) {
+                Button("Containers") {
+                    openWindow(id: ContainersWindow.id)
+                }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+            }
+        }
+
+        // One window, not a group: there is one repository, and a second view of it would only
+        // disagree with the first about what was selected.
+        Window("Containers", id: ContainersWindow.id) {
+            ContainersView()
+                .environment(library)
+        }
+        .defaultSize(width: 960, height: 640)
 
         Settings {
             SettingsView()
@@ -30,6 +53,10 @@ struct IngestApp: App {
     init() {
         Preferences.register()
     }
+}
+
+enum ContainersWindow {
+    static let id = "containers"
 }
 
 /// Run as `Ingest.app` this changes nothing: the bundle's Info.plist makes it a regular app. Run as

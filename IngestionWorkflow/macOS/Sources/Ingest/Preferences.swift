@@ -13,6 +13,9 @@ enum Preferences {
     /// The folder imported files land in, as a path. No default: it is chosen, and until it is the
     /// Import button says why it is disabled.
     static let outputFolder = "outputFolder"
+    /// The local clone of the data repository, as a path: where containers are read from and
+    /// written to. No default, for the same reason as the output folder.
+    static let repositoryFolder = "repositoryFolder"
 
     // Scanning
     static let minimumTitleLength = "minimumTitleLength"
@@ -97,34 +100,55 @@ struct SettingsView: View {
                 .tabItem { Label("Playback", systemImage: "play.rectangle") }
         }
         .scenePadding()
-        .frame(width: 460, height: 300)
+        .frame(width: 460, height: 340)
     }
 }
 
 struct IngestionSettings: View {
     @AppStorage(Preferences.outputFolder) private var outputFolder = ""
+    @AppStorage(Preferences.repositoryFolder) private var repositoryFolder = ""
 
     var body: some View {
         Form {
-            LabeledContent("Output folder") {
-                HStack {
-                    if outputFolder.isEmpty {
-                        Text("Not chosen")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(outputFolder)
-                            .truncationMode(.middle)
-                            .lineLimit(1)
-                            .help(outputFolder)
-                    }
-                    Button("Choose…") { choose() }
-                }
+            Section {
+                FolderField(label: "Output folder", path: $outputFolder, prompt: "Use as output folder")
+                Text("Where imported files are written. Import is disabled until a folder is chosen.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
-            Text("Where imported files are written. Import is disabled until a folder is chosen.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Section {
+                FolderField(label: "Repository folder", path: $repositoryFolder, prompt: "Use as repository")
+                Text("A local clone of the smddb data repository. Containers are read from it and written to it; committing what was written is up to you.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// A path preference: the path, middle-truncated, or "Not chosen", and a button that opens the
+/// folder panel.
+struct FolderField: View {
+    let label: String
+    @Binding var path: String
+    let prompt: String
+
+    var body: some View {
+        LabeledContent(label) {
+            HStack {
+                if path.isEmpty {
+                    Text("Not chosen")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(path)
+                        .truncationMode(.middle)
+                        .lineLimit(1)
+                        .help(path)
+                }
+                Button("Choose…") { choose() }
+            }
+        }
     }
 
     private func choose() {
@@ -132,12 +156,12 @@ struct IngestionSettings: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        if !outputFolder.isEmpty {
-            panel.directoryURL = URL(fileURLWithPath: outputFolder)
+        if !path.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: path)
         }
-        panel.prompt = "Use as output folder"
+        panel.prompt = prompt
         if panel.runModal() == .OK, let url = panel.url {
-            outputFolder = url.path
+            path = url.path
         }
     }
 }
