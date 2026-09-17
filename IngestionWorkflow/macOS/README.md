@@ -71,6 +71,19 @@ its history is filed under that hash; titles the history says were already impor
 disabled and unticked, keyed by playlist, segment map and duration so a change of minimum length
 does not lose them. A disc macOS cannot mount is filed under its MakeMKV name instead.
 
+Assign has an action panel along the bottom, and the first action is Reject, for a file that has
+been watched and is not worth keeping. It asks first, takes an optional description, deletes the
+file, and turns the disc's record of the title from imported to rejected, so Import shows a red
+"Rejected" and the date, and the title reads "Title 9 (description)". The button's menu refines
+that to Reject as Disc Logo/Warning, where the description is required and the clip is remembered
+apart from the disc: a title on any later disc with the same signature comes up rejected at scan
+time, unticked, under that description, and is never imported. The signature is the title's exact
+size in bytes, its duration, and the codec and shape of each primary stream. It cannot be a hash of
+the bytes, which are encrypted per disc on the volume and carry a fresh UID and date in each MKV;
+and it leaves out the file name, playlist, chapters and languages, which belong to the disc's
+authoring rather than the clip. A rejection is taken back from the title's context menu in Import,
+which for a disc logo forgets the clip as one.
+
 In Import, the opening screen is one button per drive; pressing one scans it. Drives and discs are noticed
 as they come and go — a disc in or out through DiskArbitration, a drive plugged or unplugged
 through IOKit — and the table is re-read from MakeMKV when they do. It is read again when the

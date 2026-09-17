@@ -187,6 +187,165 @@ struct IngestTests {
         #expect(second.importStatus[7] != nil)
     }
 
+    /// A disc with a logo clip and a feature. `logoFile` is where this disc keeps the logo: the
+    /// same clip sits under a different name, and a different title index, on each disc.
+    private func discWithLogo(named name: String, logoFile: String, logoIndex: Int) -> Scan {
+        Scan(source: .disc(0), settings: ScanSettings(), result: DiscScan(parsing: """
+            TCOUNT:2
+            CINFO:2,0,"\(name)"
+            TINFO:\(logoIndex),16,0,"\(logoFile)"
+            TINFO:\(logoIndex),9,0,"0:00:21"
+            TINFO:\(logoIndex),11,0,"48234496"
+            TINFO:\(logoIndex),27,0,"\(name)_t0\(logoIndex).mkv"
+            SINFO:\(logoIndex),0,1,6201,"Video"
+            SINFO:\(logoIndex),0,5,0,"V_MPEG4/ISO/AVC"
+            SINFO:\(logoIndex),0,19,0,"1920x1080"
+            SINFO:\(logoIndex),1,1,6202,"Audio"
+            SINFO:\(logoIndex),1,5,0,"A_AC3"
+            SINFO:\(logoIndex),1,14,0,"6"
+            TINFO:5,16,0,"00800.mpls"
+            TINFO:5,9,0,"1:41:07"
+            TINFO:5,11,0,"31234567890"
+            TINFO:5,27,0,"\(name)_t05.mkv"
+            SINFO:5,0,1,6201,"Video"
+            SINFO:5,0,5,0,"V_MPEG4/ISO/AVC"
+            SINFO:5,0,19,0,"1920x1080"
+            """))
+    }
+
+    @Test @MainActor func rejectingDeletesTheFileAndTurnsTheRecordToRejected() throws {
+        let directory = temporaryDirectory()
+        let print = DiscFingerprint(format: .bluray, contentHash: "AAAA", aacsDiscId: nil)
+        let scan = discWithLogo(named: "Disc A", logoFile: "00005.m2ts", logoIndex: 0)
+        let file = directory.appendingPathComponent("Disc A_t00.mkv")
+        try Data("mkv".utf8).write(to: file)
+
+        let model = IngestModel(store: IngestStore(directory: directory))
+        model.adoptForTesting(scan, makeMKV: nil, fingerprint: print)
+        let item = model.recordImport(of: scan.titles[0], from: scan, at: file)
+        try model.reject(item, as: .rejected, description: "  menu loop ")
+
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(model.assignQueue.isEmpty)
+        // The disc is still the one scanned, so its row changes at once, description trimmed.
+        guard case .rejected(let rejection)? = model.importStatus[0] else {
+            Issue.record("title 0 should be rejected, got \(String(describing: model.importStatus[0]))")
+            return
+        }
+        #expect(rejection.kind == .rejected)
+        #expect(rejection.description == "menu loop")
+        // A plain reject is this disc's business only.
+        #expect(model.discLogos.isEmpty)
+
+        // And it is what the disc shows after a relaunch, unticked, with the feature still offered.
+        let relaunched = IngestModel(store: IngestStore(directory: directory))
+        relaunched.adoptForTesting(scan, makeMKV: nil, fingerprint: print)
+        // Compared by field: the store keeps dates to the second, so the date itself comes back rounded.
+        guard case .rejected(let reloaded)? = relaunched.importStatus[0] else {
+            Issue.record("title 0 should still be rejected, got \(String(describing: relaunched.importStatus[0]))")
+            return
+        }
+        #expect(reloaded.kind == .rejected)
+        #expect(reloaded.description == "menu loop")
+        #expect(relaunched.selectedTitles == [5])
+
+        // Cleared, it is offered again, and stays so.
+        relaunched.clearRejection(of: scan.titles[0])
+        #expect(relaunched.importStatus[0] == nil)
+        let again = IngestModel(store: IngestStore(directory: directory))
+        again.adoptForTesting(scan, makeMKV: nil, fingerprint: print)
+        #expect(again.importStatus[0] == nil)
+    }
+
+    @Test @MainActor func aRejectedDiscLogoIsRecognisedOnAnotherDisc() throws {
+        let directory = temporaryDirectory()
+        let discA = discWithLogo(named: "Disc A", logoFile: "00005.m2ts", logoIndex: 0)
+        let file = directory.appendingPathComponent("Disc A_t00.mkv")
+        try Data("mkv".utf8).write(to: file)
+
+        let model = IngestModel(store: IngestStore(directory: directory))
+        model.adoptForTesting(discA, makeMKV: nil, fingerprint: DiscFingerprint(format: .bluray, contentHash: "AAAA", aacsDiscId: nil))
+        let item = model.recordImport(of: discA.titles[0], from: discA, at: file)
+        try model.reject(item, as: .discLogo, description: "Universal logo")
+        #expect(model.discLogos.count == 1)
+
+        // Another disc, never seen, keeps the same clip under another name and index. It comes up
+        // rejected and unticked, under the description, with nothing imported; the feature, which
+        // shares the logo's video shape but not its size, is untouched.
+        let discB = discWithLogo(named: "Disc B", logoFile: "00012.m2ts", logoIndex: 3)
+        let relaunched = IngestModel(store: IngestStore(directory: directory))
+        relaunched.adoptForTesting(discB, makeMKV: nil, fingerprint: DiscFingerprint(format: .bluray, contentHash: "BBBB", aacsDiscId: nil))
+        guard case .rejected(let rejection)? = relaunched.importStatus[3] else {
+            Issue.record("the logo on disc B should be rejected, got \(String(describing: relaunched.importStatus[3]))")
+            return
+        }
+        #expect(rejection.kind == .discLogo)
+        #expect(rejection.description == "Universal logo")
+        #expect(relaunched.importStatus[5] == nil)
+        #expect(relaunched.selectedTitles == [5])
+        #expect(relaunched.assignQueue.isEmpty)
+
+        // Clearing it on disc B forgets the clip as a logo, so the next scan offers it.
+        relaunched.clearRejection(of: discB.titles[0])
+        #expect(relaunched.discLogos.isEmpty)
+        relaunched.adoptForTesting(discB, makeMKV: nil, fingerprint: DiscFingerprint(format: .bluray, contentHash: "BBBB", aacsDiscId: nil))
+        #expect(relaunched.importStatus[3] == nil)
+    }
+
+    @Test @MainActor func aFileThatWillNotDeleteIsNotRejected() throws {
+        let directory = temporaryDirectory()
+        let locked = directory.appendingPathComponent("locked", isDirectory: true)
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        let file = locked.appendingPathComponent("Disc A_t00.mkv")
+        try Data("mkv".utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+
+        let scan = discWithLogo(named: "Disc A", logoFile: "00005.m2ts", logoIndex: 0)
+        let model = IngestModel(store: IngestStore(directory: directory))
+        model.adoptForTesting(scan, makeMKV: nil)
+        let item = model.recordImport(of: scan.titles[0], from: scan, at: file)
+        #expect(throws: (any Error).self) { try model.reject(item, as: .discLogo, description: "Logo") }
+        #expect(model.assignQueue.count == 1)
+        #expect(model.discLogos.isEmpty)
+        #expect(model.importStatus[0] == nil)
+
+        // A file already gone is no obstacle: the rejection goes through.
+        let missing = model.recordImport(of: scan.titles[1], from: scan, at: directory.appendingPathComponent("never-written.mkv"))
+        try model.reject(missing, as: .rejected, description: "")
+        #expect(model.assignQueue.count == 1)
+        guard case .rejected(let rejection)? = model.importStatus[5] else {
+            Issue.record("title 5 should be rejected")
+            return
+        }
+        #expect(rejection.description == nil)
+    }
+
+    @Test func aStateFileFromBeforeRejectionsStillLoads() throws {
+        // What the tool wrote before it knew about disc logos or rejections: no `discLogos` key,
+        // no `rejection` in a record. Losing the queue to a new key would be a poor upgrade.
+        let directory = temporaryDirectory()
+        let store = IngestStore(directory: directory)
+        try Data("""
+            {"assignQueue": [], "imports": {"hash:ABCD": {"00015.m2ts|15|0:02:57": {"titleIndex": 0, "fileURL": "file:///tmp/out/a.mkv", "importedAt": "2026-09-01T10:00:00Z"}}}}
+            """.utf8).write(to: store.fileURL)
+        let state = store.load()
+        #expect(state.imports["hash:ABCD"]?.count == 1)
+        #expect(state.imports["hash:ABCD"]?.values.first?.rejection == nil)
+        #expect(state.discLogos.isEmpty)
+    }
+
+    @Test func contentSignatureIgnoresWhereTheDiscKeepsTheClip() {
+        let a = discWithLogo(named: "Disc A", logoFile: "00005.m2ts", logoIndex: 0)
+        let b = discWithLogo(named: "Disc B", logoFile: "00012.m2ts", logoIndex: 3)
+        #expect(IngestStore.contentSignature(a.titles[0]) == "48234496|21s|v:V_MPEG4/ISO/AVC:1920x1080|a:A_AC3:6")
+        #expect(IngestStore.contentSignature(a.titles[0]) == IngestStore.contentSignature(b.titles[0]))
+        #expect(IngestStore.contentSignature(a.titles[0]) != IngestStore.contentSignature(a.titles[1]))
+        // Without a size there is nothing to recognise a clip by.
+        let bare = Title(index: 0, attributes: [.duration: Attribute(id: .duration, messageCode: 0, value: "0:00:21")], tracks: [])
+        #expect(IngestStore.contentSignature(bare) == nil)
+    }
+
     @Test func keepTrackMirrorsTheExtractionRule() {
         let defaults = UserDefaults(suiteName: "IngestTests.keepTrack")!
         defer { defaults.removePersistentDomain(forName: "IngestTests.keepTrack") }

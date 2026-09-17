@@ -131,8 +131,9 @@ struct TitleOutline: View {
             .toggleStyle(.checkbox)
             .labelsHidden()
             .disabled(status != nil)
-            Text("Title \(title.index)")
+            Text(titleName(title, status: status))
                 .fontWeight(.medium)
+                .lineLimit(1)
             Text(title.sourceIdentifier ?? "")
                 .font(.callout.monospaced())
                 .foregroundStyle(.secondary)
@@ -150,6 +151,19 @@ struct TitleOutline: View {
             }
         }
         .foregroundStyle(status == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+        .contextMenu {
+            if case .rejected? = status {
+                Button("Clear Rejection") { model.clearRejection(of: title) }
+            }
+        }
+    }
+
+    /// "Title 9", or "Title 9 (FBI warning)" once it has been rejected with a description.
+    private func titleName(_ title: Title, status: ImportStatus?) -> String {
+        if case .rejected(let rejection)? = status, let description = rejection.description {
+            return "Title \(title.index) (\(description))"
+        }
+        return "Title \(title.index)"
     }
 
     @ViewBuilder
@@ -170,6 +184,14 @@ struct TitleOutline: View {
             case .failed:
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
                 Text("Failed")
+            // A disc logo carries no date: on a disc it was recognised on rather than rejected
+            // from, there is no date that is this disc's.
+            case .rejected(let rejection):
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                switch rejection.kind {
+                case .rejected: Text("Rejected \(rejection.rejectedAt, format: .dateTime.day().month().year())")
+                case .discLogo: Text("Rejected Disc Logo/Warning")
+                }
             }
         }
         .font(.callout)

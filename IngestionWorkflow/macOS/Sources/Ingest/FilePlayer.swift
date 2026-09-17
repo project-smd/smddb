@@ -135,6 +135,13 @@ final class FilePlayer {
         }
     }
 
+    /// Pause if playing; a sheet over the player should not have the film carry on behind it.
+    func pause() {
+        if player.isPlaying {
+            player.pause()
+        }
+    }
+
     func seek(toMilliseconds milliseconds: Int) {
         guard player.isSeekable else { return }
         player.time = VLCTime(int: Int32(clamping: milliseconds))

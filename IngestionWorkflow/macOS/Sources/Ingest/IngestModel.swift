@@ -40,6 +40,9 @@ enum ImportStatus: Hashable {
     case failed
     /// Imported on an earlier launch, per the history kept for this disc.
     case previouslyImported(Date)
+    /// Imported, looked at in Assign and thrown away; or recognised as a disc logo or warning
+    /// rejected from another disc, and so never imported from this one.
+    case rejected(Rejection)
 }
 
 /// What the window is doing. One thing at a time, because MakeMKV is.
@@ -89,6 +92,9 @@ final class IngestModel {
     /// What has been imported from which disc, across launches, so a disc put back in the drive
     /// shows the titles already taken from it as done rather than offering them again.
     private(set) var imports: [String: [String: ImportRecord]] = [:]
+    /// Clips rejected as disc logos or warnings, by content signature. Not filed under a disc:
+    /// the point is to know them on a disc that has never been in the drive.
+    private(set) var discLogos: [String: DiscLogo] = [:]
     private let store: IngestStore
 
     /// The fingerprint of the scanned disc, when its volume could be read; the key its history is
@@ -100,11 +106,12 @@ final class IngestModel {
         let state = store.load()
         assignQueue = state.assignQueue
         imports = state.imports
+        discLogos = state.discLogos
     }
 
     private func persist() {
         do {
-            try store.save(PersistedState(assignQueue: assignQueue, imports: imports))
+            try store.save(PersistedState(assignQueue: assignQueue, imports: imports, discLogos: discLogos))
         } catch {
             fail("Could not save the queue", error)
         }
@@ -421,21 +428,101 @@ final class IngestModel {
         scan.map { IngestStore.discKey(fingerprint: fingerprint, discName: $0.disc?.name ?? "Disc") }
     }
 
-    /// After a scan: mark the titles this disc's history says were imported, and tick the rest.
+    /// After a scan: mark the titles this disc's history says were imported or rejected, and the
+    /// ones known as a disc logo or warning from any disc, and tick the rest.
     func applyImportHistory() {
         guard let scan, let discKey = currentDiscKey else { return }
         let history = imports[discKey] ?? [:]
-        var marked = 0
+        var imported = 0, rejected = 0, recognised = 0
         for title in scan.titles {
             if let record = history[IngestStore.titleKey(title)] {
-                importStatus[title.index] = .previouslyImported(record.importedAt)
+                if let rejection = record.rejection {
+                    importStatus[title.index] = .rejected(rejection)
+                    rejected += 1
+                } else {
+                    importStatus[title.index] = .previouslyImported(record.importedAt)
+                    imported += 1
+                }
                 selectedTitles.remove(title.index)
-                marked += 1
+            } else if let logo = knownDiscLogo(for: title) {
+                importStatus[title.index] = .rejected(Rejection(kind: .discLogo, description: logo.description, rejectedAt: logo.rejectedAt))
+                selectedTitles.remove(title.index)
+                recognised += 1
             }
         }
-        if marked > 0 {
-            note("\(marked) title(s) already imported from this disc")
+        if imported > 0 {
+            note("\(imported) title(s) already imported from this disc")
         }
+        if rejected > 0 {
+            note("\(rejected) title(s) already rejected from this disc")
+        }
+        if recognised > 0 {
+            note("\(recognised) title(s) recognised as a disc logo or warning rejected before")
+        }
+    }
+
+    private func knownDiscLogo(for title: Title) -> DiscLogo? {
+        IngestStore.contentSignature(title).flatMap { discLogos[$0] }
+    }
+
+    // MARK: - Reject
+
+    /// Throw away a file the user has looked at in Assign: delete it, take it out of the queue,
+    /// and turn its disc's record of it from imported to rejected. As a disc logo it is also
+    /// remembered by content, so the same clip on another disc comes up rejected at scan time.
+    ///
+    /// The file goes first, and if it will not go nothing else changes: a record saying rejected
+    /// beside a file still on disk would be a lie. A file already gone is not a failure.
+    func reject(_ item: ImportedItem, as kind: Rejection.Kind, description: String) throws {
+        let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try FileManager.default.removeItem(at: item.fileURL)
+        } catch CocoaError.fileNoSuchFile {
+            note("\(item.fileName) was already gone")
+        }
+        let rejection = Rejection(kind: kind, description: trimmed.isEmpty ? nil : trimmed, rejectedAt: .now)
+        assignQueue.removeAll { $0.id == item.id }
+        let discKey = IngestStore.discKey(fingerprint: item.fingerprint, discName: item.discName)
+        let titleKey = IngestStore.titleKey(item.title)
+        var record = imports[discKey]?[titleKey] ?? ImportRecord(titleIndex: item.title.index, fileURL: item.fileURL, importedAt: item.importedAt)
+        record.rejection = rejection
+        imports[discKey, default: [:]][titleKey] = record
+        if kind == .discLogo {
+            if let signature = IngestStore.contentSignature(item.title) {
+                discLogos[signature] = DiscLogo(description: trimmed, rejectedAt: rejection.rejectedAt, discName: item.discName)
+            } else {
+                note("Title \(item.title.index) has no size or duration to recognise it by; rejected on this disc only")
+            }
+        }
+        persist()
+        note("Rejected \(item.fileName)" + (kind == .discLogo ? " as a disc logo or warning" : "") + (rejection.description.map { " (\($0))" } ?? ""))
+
+        // The disc in the drive may be the one the file came from, or another carrying the same
+        // logo: either way its rows should say so now rather than at the next scan. Titles already
+        // sent to Import are left to finish.
+        guard let scan else { return }
+        for title in scan.titles {
+            let isTheTitle = currentDiscKey == discKey && IngestStore.titleKey(title) == titleKey
+            let isTheLogo = kind == .discLogo && importStatus[title.index] == nil && knownDiscLogo(for: title) != nil
+            if isTheTitle || isTheLogo {
+                importStatus[title.index] = .rejected(rejection)
+                selectedTitles.remove(title.index)
+            }
+        }
+    }
+
+    /// Take a rejection back, from the title's row in Import: the title is offered again. If it
+    /// was rejected as a disc logo the clip is forgotten as one too, since otherwise the next scan
+    /// would recognise it straight away; other discs' own records of rejecting it stand.
+    func clearRejection(of title: Title) {
+        guard case .rejected(let rejection)? = importStatus[title.index], let discKey = currentDiscKey else { return }
+        imports[discKey]?[IngestStore.titleKey(title)] = nil
+        if rejection.kind == .discLogo, let signature = IngestStore.contentSignature(title) {
+            discLogos[signature] = nil
+        }
+        importStatus[title.index] = nil
+        persist()
+        note("Cleared the rejection of title \(title.index)")
     }
 
     /// Read the disc's fingerprint from its volume, off the main thread, since the scan already
