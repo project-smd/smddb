@@ -60,6 +60,18 @@ cp "$products/Ingest" "$app/Contents/MacOS/Ingest"
 cp Bundle/Info.plist "$app/Contents/Info.plist"
 cp -R "$framework" "$app/Contents/Frameworks/"
 
+# Record the SDK the executable was really built against. The swift.org toolchain links through its
+# own clang, which is handed the SDK as --sysroot, does not read a version out of it, and so tells
+# the linker the SDK is the deployment target: `sdk 14.0` beside objects that all say 27.0. AppKit
+# picks an app's appearance by that number, so the app is drawn in the design of the release it
+# claims — macOS 14's, on macOS 27. Xcode's own toolchain gets this right; SDKROOT would fix clang
+# too, but the build service does not pass the environment on to the link.
+minos="$(vtool -show-build "$app/Contents/MacOS/Ingest" | awk '$1 == "minos" { print $2; exit }')"
+sdk="$(xcrun --sdk macosx --show-sdk-version)"
+vtool -set-build-version macos "$minos" "$sdk" -replace \
+    -output "$app/Contents/MacOS/Ingest" "$app/Contents/MacOS/Ingest" 2>&1 \
+    | grep -v "code signature will be invalid" 1>&2 || true
+
 # The linker's rpaths point into .build; add the one an app bundle uses. install_name_tool warns
 # that this breaks the linker's ad hoc signature, which the signing below replaces.
 install_name_tool -add_rpath @executable_path/../Frameworks "$app/Contents/MacOS/Ingest" 2>&1 \
