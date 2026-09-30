@@ -732,6 +732,57 @@ pass compares the two, exactly as it does for track indices, and a file whose
 chapters no longer match its `.smd` is reported rather than silently trusted
 either way.
 
+### `<rules>`: what a library does with what the container holds
+
+One optional child of `<container>`, at most one, written last: the encoding
+rules a library applies to the files it makes for this container and every
+container below it.
+
+```xml
+<container format="1" type="serial" id="talons-of-weng-chiang">
+  …
+  <rules>
+    <!-- The restoration's extras are why the box set was bought. -->
+    <video id="restoration-extras">
+      <when fact="kind" ne="episode"/>
+      <copy/>
+    </video>
+  </rules>
+</container>
+```
+
+**The format defines the slot, not what goes in it.** The rules inside are
+written in the language of the server that encodes the library's files —
+[media-silo's rulesets](https://github.com/media-silo/silo-server/blob/main/openspec/specs/rulesets/spec.md),
+for a silo — and that server says what they mean, including how a container's
+rules stand against its ancestors' and the library's own. Nothing else reads
+them. A tool that does not encode ignores the element, as it ignores anything it
+does not read; Emby never reads a `.smd` at all, so principle 1 is untouched.
+
+**Why here.** A household's exceptions are about containers — this serial's
+restored extras are kept whole, that season's isolated score is never
+re-encoded — and a fact about a container has one home, beside the container's
+files (principle 3). Kept in the server's own configuration instead, it would be
+lost the first time the library was copied to another disk, restored from
+backup or handed to another server, which is exactly the move a `.smd` exists to
+survive.
+
+**Authored, not written.** Principle 4 declares every file the tool writes, and
+the rules are not one of them: a person writes them, and a tool that updates a
+`.smd` — to add a presentation, say — keeps the element exactly as it found it,
+comments included. Changing a container's rules is a deliberate edit, never a
+side effect of filing a file.
+
+**A library's fact, not a pressing's.** The rules say what this library makes,
+as `profile` does, not what a disc holds, so the repository file the shared
+store keeps carries no `<rules>`, and `ContainerDatabase.md` has no table for
+them.
+
+This is the one place the format says what should be made rather than
+describing what exists, and the first non-goal below might seem to rule it out.
+It does not, because the format takes no view on the rules: it carries them for
+the one reader that has one.
+
 ### `<extras>`, not `<outOfBand>`
 
 The vocabulary already exists, so the `type` attribute on an extras `<item>`

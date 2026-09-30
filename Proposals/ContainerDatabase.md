@@ -207,11 +207,14 @@ How the two halves correspond:
 | `<source disc playlist>` | DiscTitle, by natural key | The `.smd` names the disc's content hash and the playlist, never a DiscTitleId, so a hand-edited file stays self-describing |
 | `<chapter index title>` | Chapter | The tool writes them into the ripped file as well; the `.smd` declares them because it writes them |
 | `<track feature audio subtitle>` | BindingStream | Indices are the disc playlist's, not the ripped file's; a remux renumbers and the verification pass in the sidecar proposal already covers that |
+| `<rules>` | *none* | A library's encoding policy for the container, in its server's language; see below |
 
 The one deliberate asymmetry is `profile`. A mobile re-encode is a fact about a
 library, not about a pressing, so it lives in the `.smd` and has no table. The
 database describes what a disc holds; the sidecar also describes what was made
-from it.
+from it. `<rules>` is the same asymmetry one step earlier: how this library
+makes its files from what a disc holds, which another library holding the same
+pressing has every reason to decide differently.
 
 ### Resolution rules
 
