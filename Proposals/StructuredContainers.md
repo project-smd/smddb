@@ -180,7 +180,9 @@ One container per file, XML, rooted at `<container>`:
     <item type="episode" id="part1">
       <presentation nfo="S14E21/Doctor Who (1963) - s14e021 - The Talons of Weng-Chiang Part 1 - Broadcast version.nfo"
                     file="S14E21/Doctor Who (1963) - s14e021 - The Talons of Weng-Chiang Part 1 - Broadcast version.mkv">
-        <source disc="3F1A…C2E9" playlist="00004.mpls"/>
+        <source binding="5b0e…91d2">
+          <segment scheme="discTitle" value="3F1A…C2E9/00004.mpls"/>
+        </source>
         <track feature="commentary1" audio="3"/>
         <track feature="music1" audio="4"/>
         <chapter index="1" title="Opening titles"/>
@@ -699,38 +701,179 @@ file directly. Uniformity is worth it: one rule — *files and NFOs hang off
 presentations, presentations hang off items* — beats a shorthand that has to be
 unlearned the first time an extra acquires a mobile encode.
 
-### `<source>` and `<chapter>`: what the tool knows at rip time and nowhere else
+### `<source>` and `<chapter>`: what is known when a file is made and nowhere else
 
 Two more children of `<presentation>`, both optional, both recording facts that
 are known when a file is made and unrecoverable afterwards.
 
 ```xml
 <presentation nfo="…" file="…">
-  <source disc="3F1A…C2E9" playlist="00004.mpls"/>
+  <source binding="5b0e…91d2">
+    <segment scheme="discTitle" value="3F1A…C2E9/00004.mpls"/>
+  </source>
   <chapter index="1" title="Opening titles"/>
   <chapter index="2" title="Fog on the Thames"/>
 </presentation>
 ```
 
-**`<source>` says which disc and which playlist the file was ripped from.** The
-`disc` is the content hash the shared database and TheDiscDb both key on, and
-`playlist` is the playlist name — the pair that identifies a disc title by its
-natural key, rather than an opaque id minted somewhere else. That keeps a
-hand-edited file self-describing. What it buys is the round trip: a correction
-made in the library can be sent back to the store against the right pressing,
-and a second copy of the same disc binds to the same items without anyone
-typing. It is the one attribute in the format that names something outside the
+**`<source>` names the binding the file was made from.** A binding, in
+`ContainerDatabase.md`, is the record of where an entry came from: the segments
+of one or more sources joined to make it, which alternative it serves, and
+which of its streams carry which feature. `binding` is that record's id, a UUID
+minted once — by the library's server when it ingests the file, and kept when
+the binding is contributed to the shared store — so the `.smd` and the store
+name the same binding. What it buys is the round trip: a correction made in the
+library can be sent back against the right binding, and a second copy of the
+same disc binds to the same items without anyone typing.
+
+**The segments are a copy, so the file describes itself.** An id means nothing
+to a reader without the store, and a binding that was never contributed — a home
+recording, a file nobody else holds — is in no store at all. So `<source>` also
+holds the binding's segments, in order, each naming its source by natural key: a
+`scheme`, which says how the value is read, and the `value`. A disc title's
+scheme is `discTitle` and its value the disc's content hash and the playlist; a
+file's might be `sha256` and its content hash. A segment that is part of its
+source names the chapters it spans, `from` and `to`, counted from one; one that
+is the whole source names none. An episode cut from a play-all title is one
+segment with a span:
+
+```xml
+<source binding="c41a…07fe">
+  <segment scheme="discTitle" value="3F1A…C2E9/00001.mpls" from="5" to="7"/>
+</source>
+```
+
+and a film pressed across two discs is two:
+
+```xml
+<source binding="9d3f…a2b4">
+  <segment scheme="discTitle" value="77B0…1E4C/00800.mpls"/>
+  <segment scheme="discTitle" value="A9C2…5D10/00800.mpls"/>
+</source>
+```
+
+A segment whose source has no natural key — a file nothing outside its library
+can identify — is written with no `scheme` and `value`, so the segments keep
+their count, order and spans. The copy is not a second source of truth: it is
+the binding's content, and where the store has the binding the two are compared,
+and a disagreement is reported rather than resolved, as every disagreement
+between two sources is.
+
+`<source>` is the one element in the format that names something outside the
 library, and it is optional for that reason — a file whose provenance nobody
 recorded is simply a file.
+
+**An earlier form names one disc title.** `<source disc="…" playlist="…"/>`, the
+form this element had before sources were generalised, says that the file was
+made from the whole of one disc title and names no binding. A reader takes it as
+one whole segment of the source `discTitle` `<disc>/<playlist>`; a writer writes
+the new form, so the old one leaves a library as its presentations are written
+again.
 
 **`<chapter>` names the chapters.** Blu-ray chapters are usually unnamed on the
 disc and the names, where anyone has them, are authored knowledge. Principle 4
 would seem to exclude them — an MKV carries chapters natively, so they are
-discoverable — but the tool *writes* them, into the container file at rip time
-so that any player shows them, and a write target is declared. The verification
-pass compares the two, exactly as it does for track indices, and a file whose
-chapters no longer match its `.smd` is reported rather than silently trusted
-either way.
+discoverable — but the tool *writes* them, into the container file when it is
+made so that any player shows them, and a write target is declared. The
+verification pass compares the two, exactly as it does for track indices, and a
+file whose chapters no longer match its `.smd` is reported rather than silently
+trusted either way.
+
+### `<transform>`: how the file was made from its source
+
+A third optional child of `<presentation>`, after `<source>`: which rules made
+the file from its binding.
+
+```xml
+<presentation profile="mobile" nfo="…" file="…">
+  <source binding="5b0e…91d2">…</source>
+  <transform ruleset="household" version="7">
+    <layer container="00000000000000b7" version="1" digest="sha256:9f2c…"/>
+    <layer container="00000000000000a3" version="4" digest="sha256:41d0…"/>
+    <adjusted kind="audio" index="1"/>
+  </transform>
+  <track feature="commentary1" audio="2"/>
+</presentation>
+```
+
+`ruleset` and `version` name the library's ruleset, as its server versions it.
+Each `<layer>`, nearest first, names a container whose own `<rules>` took part —
+the container's id, the version of its rules, and the digest of that version's
+file — and a container with no rules has no `<layer>`. Each `<adjusted>` names a
+stream whose decision a person changed after the rules made it, by `kind`
+(`video`, `audio` or `subtitle`) and `index`, counted as `<track>` counts.
+
+**Identities, not contents.** The ruleset's versions are kept by its server and
+every container's versions beside its `.smd`, so a version and a digest are
+enough to find, and check, exactly what made a file. Which streams were adjusted
+is recorded, not how: the adjustment is in the server's vocabulary, and its
+result is the file itself. A server that later asks whether its current rules
+would make a file differently compares only the decisions the rules made.
+
+**A library's fact.** Two libraries holding the same pressing share its binding
+and make different files from it, so `<transform>` is never in the repository
+file, and `ContainerDatabase.md` has no table for it. Like `<source>`, it is
+written when the file is made and is part of the presentation, so a tool that
+writes a presentation writes it whole.
+
+### `<rules>`: what a library does with what the container holds
+
+One optional child of `<container>`, at most one, written last: which version of
+the encoding rules a library applies to the files it makes for this container and
+every container below it. The rules themselves are not in the `.smd`. Each
+version is a file of its own in a folder beside it, and `<rules>` names the
+folder and the version in force:
+
+```xml
+<container format="1" type="serial" id="talons-of-weng-chiang">
+  …
+  <rules path="rules" version="4"/>
+</container>
+```
+
+Version 4 is `rules/4.xml`, beside the `.smd`. `path` is relative to the `.smd`'s
+own folder, as a child's `smd` path is, and stays inside the container's folder,
+as every path does.
+
+**The format defines the reference, not the rules.** The version files are
+written in the language of the server that encodes the library's files —
+[media-silo's rulesets](https://github.com/media-silo/silo-server/blob/main/openspec/specs/rulesets/spec.md),
+for a silo — and that server says what they mean, including how a container's
+rules stand against its ancestors' and the library's own. Nothing else reads
+them. A tool that does not encode ignores the element, as it ignores anything it
+does not read; Emby never reads a `.smd` at all, so principle 1 is untouched.
+
+**Why here.** A household's exceptions are about containers — this serial's
+restored extras are kept whole, that season's isolated score is never
+re-encoded — and a fact about a container has one home, beside the container's
+files (principle 3). Kept in the server's own configuration instead, it would be
+lost the first time the library was copied to another disk, restored from backup
+or handed to another server, which is exactly the move a `.smd` exists to
+survive.
+
+**Versions, kept.** A file made by version 4 of a season's rules says so in its
+`<transform>`, and version 4 stays in the folder after version 5 is written, so
+a library can say exactly what made each of its files wherever it goes. Naming
+the version in force, rather than taking the highest-numbered file, keeps the
+`.smd` the truth about which rules apply: a version can be written and reviewed
+before it takes effect, and going back is pointing at an earlier one. A version
+file, once written, is not edited; a change is a new version.
+
+**Authored, not written.** Principle 4 declares every file the tool writes, and
+neither the reference nor the version files are among them: a person decides
+them, by hand or through their server, and a tool that updates a `.smd` — to add
+a presentation, say — keeps the element exactly as it found it, comments
+included. Changing which rules a container uses is a deliberate edit, never a
+side effect of filing a file.
+
+**A library's fact, not a pressing's.** The rules say what this library makes,
+as `profile` does, not what a disc holds, so the repository file the shared store
+keeps carries no `<rules>`, and `ContainerDatabase.md` has no table for them.
+
+This is the one place the format says what should be made rather than
+describing what exists, and the first non-goal below might seem to rule it out.
+It does not, because the format takes no view on the rules: it names them for
+the one reader that has one.
 
 ### `<extras>`, not `<outOfBand>`
 

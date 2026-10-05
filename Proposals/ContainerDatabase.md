@@ -77,7 +77,8 @@ shared store for it.
    the principle the sidecar proposal applies throughout: a conflict between two
    sources is shown and labelled, never quietly decided.
 5. **Provenance is recorded at ingestion, because it cannot be recovered
-   afterwards.** A binding says which disc and which playlist a file came from.
+   afterwards.** A binding says which sources, and which parts of them, a file
+   came from.
    That is what lets a correction go back upstream, and what makes a second
    copy of the same disc bind to the same entries without anyone typing.
 
@@ -123,27 +124,57 @@ ExternalRef    EntityKind (container|entry|release|disc|feature|person),
                EntityId, Provider, Value
                unique on (Provider, Value, EntityKind)
 
-DiscTitle      DiscTitleId, DiscId, Playlist, SegmentMap, Duration
-               -- exists only while at least one Binding points at it
+Source         SourceId, Scheme, Value
+               unique on (Scheme, Value)
+               -- exists only while at least one BindingSegment points at it
 
-Chapter        DiscTitleId, Index, Title
+DiscTitle      SourceId, DiscId, Playlist, SegmentMap, Duration
+               -- what matching needs of a Source whose scheme is discTitle
 
-Binding        BindingId, DiscTitleId, EntryId, AlternativeId (nullable),
-               ChapterFrom, ChapterTo (nullable), ContributorId, Recorded
+Chapter        SourceId, Index, Title
+
+Binding        BindingId, EntryId, AlternativeId (nullable),
+               ContributorId, Recorded
+
+BindingSegment BindingId, Position, SourceId,
+               ChapterFrom, ChapterTo (nullable)
 
 BindingStream  BindingId, FeatureId, AudioIndex, SubtitleIndex (nullable)
 ```
 
-A DiscTitle row is not a catalogue of the disc. It exists because a binding
-needs something to hang off, and it is deleted when the last binding is. A
-looping menu, a studio logo, a copyright card and the play-all pseudo-title are
-never rows here; TheDiscDb records them, and the ingestion flow uses that
-record to skip them. This is not a MakeMKV dump, and the constraint is what
-keeps it from becoming one.
+A Source is a file's origin as anyone holding it can identify it, by a natural
+key: a `Scheme`, which says how the value is read, and the `Value`. A disc
+title's scheme is `discTitle` and its value the disc's content hash and the
+playlist, `3F1AC2E9/00004.mpls` — the pair `<source disc playlist>` named before
+this was generalised. A file's might be `sha256` and its content hash, an IMF
+package's its composition's id. Matching a disc title needs more than its key,
+so a disc title's Source has a DiscTitle row beside it holding the playlist's
+segment map and duration; another scheme brings its own row, if it needs one, or
+none.
 
-Chapter titles belong to the disc title rather than to the binding, because
-they are a fact about the playlist whichever entry it is bound to; a binding
-with a chapter span sees its slice of them.
+A Source row is not a catalogue of a disc or of anything else. It exists because
+a binding needs something to hang off, and it is deleted when the last binding
+is. A looping menu, a studio logo, a copyright card and the play-all
+pseudo-title are never rows here; TheDiscDb records them, and the ingestion flow
+uses that record to skip them. This is not a MakeMKV dump, and the constraint is
+what keeps it from becoming one.
+
+A Binding joins segments of sources, in order, to make one entry: each a whole
+source, or the chapters `ChapterFrom` to `ChapterTo` of one. Most bindings have
+one segment. An episode cut from a play-all title has one with a span; a film
+pressed across two discs has two. `BindingStream` indices count the joined
+streams, which the segments share.
+
+A BindingId is a UUID, minted by whoever records the binding — a library's
+server when it ingests a file, or this database when a binding is contributed
+straight to it — and kept when a binding minted in a library is contributed, so
+a library's `.smd` and the database name one binding alike. A binding that is
+never contributed — a home recording, a file nobody else holds — keeps its id in
+its library and is simply unknown here.
+
+Chapter titles belong to the source rather than to the binding, because they
+are a fact about the source whichever entry it is bound to; a binding with a
+chapter span sees its slice of them.
 
 A Release is the box: the thing with a barcode, a region and a date, that a
 person buys and that TheDiscDb, Amazon and DVDCompare each have a page for. A
@@ -202,16 +233,22 @@ How the two halves correspond:
 | `<item>` in `<extras>` | Entry, Role = extra | The `anchor` is a projection detail and is not stored |
 | `<item ref>` | Entry with RefEntryId | No title, no bindings, no children; the target may be in any container, which is how a companion series' episode appears in another series' extras and how extras scattered across a box set form a series of their own |
 | `<related container role>` | Relation | Season-to-season pairing for a companion series; per-item pairing by position is derived from it and an authored ref wins |
-| `<presentation>` | *none* | A presentation is a local file; a Binding is where it came from |
+| `<presentation>` | *none* | A presentation is a local file; the Binding its `<source>` names is where it came from |
 | `<presentation alternative>` | Binding.AlternativeId | |
-| `<source disc playlist>` | DiscTitle, by natural key | The `.smd` names the disc's content hash and the playlist, never a DiscTitleId, so a hand-edited file stays self-describing |
+| `<source binding>` | Binding, by id | The canonical answer to where a presentation came from |
+| `<segment scheme value from to>` | BindingSegment → Source, by natural key | A copy of the binding's segments, never a SourceId, so a hand-edited file — and a library whose bindings were never contributed — stays self-describing |
 | `<chapter index title>` | Chapter | The tool writes them into the ripped file as well; the `.smd` declares them because it writes them |
-| `<track feature audio subtitle>` | BindingStream | Indices are the disc playlist's, not the ripped file's; a remux renumbers and the verification pass in the sidecar proposal already covers that |
+| `<track feature audio subtitle>` | BindingStream | Indices are the joined sources', not the made file's; a remux renumbers and the verification pass in the sidecar proposal already covers that |
+| `<transform>` | *none* | How this library made the file from its binding; see below |
+| `<rules path version>` | *none* | A library's encoding policy for the container, in its server's language; see below |
 
 The one deliberate asymmetry is `profile`. A mobile re-encode is a fact about a
 library, not about a pressing, so it lives in the `.smd` and has no table. The
 database describes what a disc holds; the sidecar also describes what was made
-from it.
+from it. `<transform>` and `<rules>` are the same asymmetry: the rules a library
+encodes by, and which of them made each file, are this library's decisions, and
+another library holding the same pressing has every reason to decide
+differently. The binding a file was made from is shared; how it was made is not.
 
 ### Resolution rules
 
@@ -238,8 +275,8 @@ sequence. So:
 Chapter spans cover a DVD title that holds several episodes — TheDiscDb records
 these as "Episode: 5-11" — as several bindings from one DiscTitle, each to its
 own entry with a chapter range. The other direction, one entry across several
-titles, is a multi-file presentation and is out of scope here as it is in the
-sidecar proposal.
+titles — a film pressed across two discs — is one binding of several segments,
+whose presentation is the one file made by joining them.
 
 ### Identity keys
 
@@ -251,12 +288,13 @@ Two of the keys are borrowed deliberately, so that lookups interoperate:
 - **A Release is found by its external references**, UPC first, and a
   TheDiscDb release slug where one exists, so that a release catalogued there
   and a release catalogued here are recognisably the same box.
-- **DiscTitle** is keyed by playlist name plus segment map plus duration, never
-  by MakeMKV's title index. The index shifts with the minimum-length setting
-  and across MakeMKV versions; the playlist does not.
+- **A disc title** is named by its disc's content hash and its playlist, as a
+  Source's natural key, and matched by playlist name plus segment map plus
+  duration, never by MakeMKV's title index. The index shifts with the
+  minimum-length setting and across MakeMKV versions; the playlist does not.
 
 Everything else — ContainerId, SequenceId, EntryId, AlternativeId, FeatureId —
-is minted here. A UUID is fine; what matters is that it is issued once and the
+is minted here, and BindingId wherever the binding is first recorded. A UUID is fine; what matters is that it is issued once and the
 same one comes back tomorrow.
 
 ## Worked example
@@ -305,15 +343,24 @@ Disc         D2   AACS …, hash …   Blu-ray
 ReleaseDisc  R1  D1  index 3  "Season 14 Disc 3"
 ReleaseDisc  R1  D2  index 4  "Season 14 Disc 4"
 
+Source       T1   discTitle  <D1 hash>/00117.mpls
+Source       T2   discTitle  <D2 hash>/00004.mpls
+Source       T3   discTitle  <D2 hash>/00005.mpls
+Source       T4   discTitle  <D2 hash>/00289.mpls
 DiscTitle    T1   D1  00117.mpls  seg 45      1:15:20
 DiscTitle    T2   D2  00004.mpls  seg 12      0:24:40
 DiscTitle    T3   D2  00005.mpls  seg 13      0:24:40
 DiscTitle    T4   D2  00289.mpls  seg 281     0:11:36
 
-Binding      B1   T1 → E7   alt null            -- omnibus, serves A3
-Binding      B2   T2 → E1   alt null            -- part 1, serves A1 and A2
-Binding      B3   T3 → E1   alt A2              -- part 1, effects-updated only
-Binding      B4   T4 → E8   alt null            -- the featurette
+Binding      B1   → E7   alt null            -- omnibus, serves A3
+Binding      B2   → E1   alt null            -- part 1, serves A1 and A2
+Binding      B3   → E1   alt A2              -- part 1, effects-updated only
+Binding      B4   → E8   alt null            -- the featurette
+
+BindingSegment B1  1  T1
+BindingSegment B2  1  T2
+BindingSegment B3  1  T3
+BindingSegment B4  1  T4
 
 BindingStream B2  F1  audio 3
 BindingStream B3  F1  audio 3
@@ -334,20 +381,20 @@ answer at all.
 
 | Question | Path |
 | --- | --- |
-| What is on this disc? | Disc → DiscTitle → Binding → Entry → Sequence → Container. The ingestion lookup. |
-| Which discs carry this entry? | Entry → Binding → DiscTitle → Disc. Each row on the way also says the playlist, the alternative served, and a chapter span if the entry is a slice of a longer title. |
+| What is on this disc? | Disc → DiscTitle → Source → BindingSegment → Binding → Entry → Sequence → Container. The ingestion lookup. |
+| Which discs carry this entry? | Entry → Binding → BindingSegment → Source → DiscTitle → Disc. Each row on the way also says the playlist, the alternative served, and a chapter span if the entry is a slice of a longer title. |
 | Which discs carry this entry *in this cut*? | The same, filtered to bindings whose alternative is the one asked for or null on a sequence it names. The resolution rule used as a predicate. |
-| Which discs carry this feature? | Feature → BindingStream → Binding → DiscTitle → Disc, with the audio and subtitle stream index on each. |
+| Which discs carry this feature? | Feature → BindingStream → Binding → BindingSegment → Source → DiscTitle → Disc, with the audio and subtitle stream index on each. |
 | Every commentary this person recorded, and where? | Person → Participation → Feature, then the row above. Interviews and featurettes come the same way through Entry. |
 | Which *parts* was this person actually on? | The same, reading Participation.EntryId — null means every part of the feature, set means that one. Unanswerable before participation could vary within a commentary. |
 | What companion series does this one have? | Relation by role, ignoring Listed — which is the point of the flag: unlisted containers are reachable here and nowhere else. |
-| Which cuts of this container exist, and which discs hold each? | Container → Alternative → Sequence → Entry → Binding → DiscTitle → Disc. |
+| Which cuts of this container exist, and which discs hold each? | Container → Alternative → Sequence → Entry → Binding → BindingSegment → Source → DiscTitle → Disc. |
 | What is this thing an extra *of*? | Entry (Role = extra) → Sequence → Container, and up ParentEntryId to the series. |
 | What is this episode *about*, or what is about it? | Relation between containers, or a ref from one container's extras into another's sequence, in either direction. |
 | Which pressings are the same physical disc? | Disc, by fingerprint. Two boxes sharing a master share the row. |
-| Which boxes can I buy this entry in? | Entry → Binding → DiscTitle → Disc → ReleaseDisc → Release, and out through the release's ASIN or UPC. |
-| What is this box a release of? | Release → ReleaseDisc → Disc → DiscTitle → Binding → Entry → Container. Derived, never stored. |
-| Where did this file come from? | `<source>` in the `.smd` → DiscTitle by natural key → Disc, and from there to every other library that bound the same pressing. |
+| Which boxes can I buy this entry in? | Entry → Binding → BindingSegment → Source → DiscTitle → Disc → ReleaseDisc → Release, and out through the release's ASIN or UPC. |
+| What is this box a release of? | Release → ReleaseDisc → Disc → DiscTitle → Source → BindingSegment → Binding → Entry → Container. Derived, never stored. |
+| Where did this file come from? | `<source binding>` in the `.smd` → Binding → its segments' Sources → DiscTitle → Disc, and from there to every other library that bound the same pressing. Without the database, or for a binding never contributed, the `.smd`'s own `<segment>` copies say as much as the sources' natural keys can. |
 
 Three qualifications, none of them gaps.
 
