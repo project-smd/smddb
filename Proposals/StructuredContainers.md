@@ -781,27 +781,36 @@ the file from its binding.
 <presentation profile="mobile" nfo="…" file="…">
   <source binding="5b0e…91d2">…</source>
   <transform ruleset="household" version="7">
+    <layer binding="5b0e…91d2" version="2" digest="sha256:77ab…"/>
     <layer container="00000000000000b7" version="1" digest="sha256:9f2c…"/>
     <layer container="00000000000000a3" version="4" digest="sha256:41d0…"/>
-    <adjusted kind="audio" index="1"/>
   </transform>
   <track feature="commentary1" audio="2"/>
 </presentation>
 ```
 
 `ruleset` and `version` name the library's ruleset, as its server versions it.
-Each `<layer>`, nearest first, names a container whose own `<rules>` took part —
-the container's id, the version of its rules, and the digest of that version's
-file — and a container with no rules has no `<layer>`. Each `<adjusted>` names a
-stream whose decision a person changed after the rules made it, by `kind`
-(`video`, `audio` or `subtitle`) and `index`, counted as `<track>` counts.
+Each `<layer>`, nearest first, names a set of rules that took part, by what they
+belong to — the binding the file was made from, or a container — with the
+version of those rules and the digest of that version's file. Rules that do not
+exist take no part and have no `<layer>`: a binding nobody overrode, a container
+with no rules of its own.
 
-**Identities, not contents.** The ruleset's versions are kept by its server and
-every container's versions beside its `.smd`, so a version and a digest are
-enough to find, and check, exactly what made a file. Which streams were adjusted
-is recorded, not how: the adjustment is in the server's vocabulary, and its
-result is the file itself. A server that later asks whether its current rules
-would make a file differently compares only the decisions the rules made.
+**A person's decision is a layer like any other.** When the rules decide a
+stream and a person decides otherwise — keep this track as it is, the rules
+would re-encode it — the decision is written as a rule in the binding's own
+rules, nearest of all, and the file is made through it. So the binding's layer
+is where a person's last word on one entry lives, and it is named in the
+`<transform>` as every other layer is. Nothing in the format says which streams
+a person decided: that is in the binding's rules, in its server's language, and
+the file is the result. A server that later asks whether its current rules would
+make a file differently resolves through the same stack, binding layer included,
+so a stream a person decided is decided the same way again — and when the file is
+made again, the decision carries over.
+
+**Identities, not contents.** The ruleset's versions are kept by its server, and
+every container's and binding's versions beside the `.smd` that names them, so a
+version and a digest are enough to find, and check, exactly what made a file.
 
 **A library's fact.** Two libraries holding the same pressing share its binding
 and make different files from it, so `<transform>` is never in the repository
@@ -828,6 +837,30 @@ Version 4 is `rules/4.xml`, beside the `.smd`. `path` is relative to the `.smd`'
 own folder, as a child's `smd` path is, and stays inside the container's folder,
 as every path does.
 
+**A binding's own rules.** An `<item>` may hold, among its presentations, one
+`<rules>` per binding of the item that has rules of its own, naming the binding
+as well as the folder and the version in force:
+
+```xml
+<item type="episode" id="part1">
+  <rules binding="5b0e…91d2" path="rules/bindings/5b0e…91d2" version="2"/>
+  <presentation nfo="…" file="…">
+    <source binding="5b0e…91d2">…</source>
+    …
+  </presentation>
+</item>
+```
+
+They are the rules nearest any file made from that binding, ahead of every
+container's, and they are what a person's decision about one entry becomes: the
+stream this binding's disc carries that the rules mistake, the track kept as it
+is. They belong to the binding, not to the item, because they speak of the
+binding's own streams, which another binding of the same item — another cut,
+another disc — numbers differently. They are on the item, rather than on each
+presentation, because every presentation made from the binding shares them; a
+decision for one profile only says so in the rules, as any rule may. Everything
+below about a container's rules holds for a binding's.
+
 **The format defines the reference, not the rules.** The version files are
 written in the language of the server that encodes the library's files —
 [media-silo's rulesets](https://github.com/media-silo/silo-server/blob/main/openspec/specs/rulesets/spec.md),
@@ -844,8 +877,8 @@ lost the first time the library was copied to another disk, restored from backup
 or handed to another server, which is exactly the move a `.smd` exists to
 survive.
 
-**Versions, kept.** A file made by version 4 of a season's rules says so in its
-`<transform>`, and version 4 stays in the folder after version 5 is written, so
+**Versions, kept.** A file made by version 4 of a season's rules, or version 2
+of its binding's, says so in its `<transform>`, and version 4 stays in the folder after version 5 is written, so
 a library can say exactly what made each of its files wherever it goes. Naming
 the version in force, rather than taking the highest-numbered file, keeps the
 `.smd` the truth about which rules apply: a version can be written and reviewed
@@ -856,12 +889,14 @@ file, once written, is not edited; a change is a new version.
 neither the reference nor the version files are among them: a person decides
 them, by hand or through their server, and a tool that updates a `.smd` — to add
 a presentation, say — keeps the element exactly as it found it, comments
-included. Changing which rules a container uses is a deliberate edit, never a
-side effect of filing a file.
+included. Changing which rules a container or a binding uses is a deliberate edit,
+never a side effect of filing a file.
 
 **A library's fact, not a pressing's.** The rules say what this library makes,
 as `profile` does, not what a disc holds, so the repository file the shared store
-keeps carries no `<rules>`, and `ContainerDatabase.md` has no table for them.
+keeps carries no `<rules>`, and `ContainerDatabase.md` has no table for them —
+a binding's included: the binding is shared, and what one library decides to
+make of it is not.
 
 This is the one place the format says what should be made rather than
 describing what exists, and the first non-goal below might seem to rule it out.
