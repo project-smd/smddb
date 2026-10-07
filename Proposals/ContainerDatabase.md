@@ -239,7 +239,7 @@ How the two halves correspond:
 | `<chapter index title>` | Chapter | The tool writes them into the ripped file as well; the `.smd` declares them because it writes them |
 | `<track feature audio subtitle>` | BindingStream | Indices are the joined sources', not the made file's; a remux renumbers and the verification pass in the sidecar proposal already covers that |
 | `<transform>` | *none* | How this library made the file from its binding; see below |
-| `<rules path version>` | *none* | A library's encoding policy for the container, or, on an item, for one binding of it, in its server's language; see below |
+| `<rules path activeVersion>` | *none* | A library's encoding policy for the container, or, on an item, for one binding of it, in its server's language; see below |
 
 The one deliberate asymmetry is `profile`. A mobile re-encode is a fact about a
 library, not about a pressing, so it lives in the `.smd` and has no table. The

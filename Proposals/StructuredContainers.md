@@ -824,18 +824,20 @@ One optional child of `<container>`, at most one, written last: which version of
 the encoding rules a library applies to the files it makes for this container and
 every container below it. The rules themselves are not in the `.smd`. Each
 version is a file of its own in a folder beside it, and `<rules>` names the
-folder and the version in force:
+folder and, of the versions in it, the one in force:
 
 ```xml
 <container format="1" type="serial" id="talons-of-weng-chiang">
   …
-  <rules path="rules" version="4"/>
+  <rules path="rules" activeVersion="4"/>
 </container>
 ```
 
-Version 4 is `rules/4.xml`, beside the `.smd`. `path` is relative to the `.smd`'s
-own folder, as a child's `smd` path is, and stays inside the container's folder,
-as every path does.
+`path` is the folder of every version, relative to the `.smd`'s own folder, as a
+child's `smd` path is, and inside the container's folder, as every path is; a
+version `n` is the file `<path>/<n>.xml`. `activeVersion` picks the one in force
+from among them — here `rules/4.xml` — and says nothing of the others, which
+stay in the folder for the files they made.
 
 **A binding's own rules.** An `<item>` may hold, among its presentations, one
 `<rules>` per binding of the item that has rules of its own, naming the binding
@@ -843,7 +845,7 @@ as well as the folder and the version in force:
 
 ```xml
 <item type="episode" id="part1">
-  <rules binding="5b0e…91d2" path="rules/bindings/5b0e…91d2" version="2"/>
+  <rules binding="5b0e…91d2" path="rules/bindings/5b0e…91d2" activeVersion="2"/>
   <presentation nfo="…" file="…">
     <source binding="5b0e…91d2">…</source>
     …
@@ -858,8 +860,13 @@ is. They belong to the binding, not to the item, because they speak of the
 binding's own streams, which another binding of the same item — another cut,
 another disc — numbers differently. They are on the item, rather than on each
 presentation, because every presentation made from the binding shares them; a
-decision for one profile only says so in the rules, as any rule may. Everything
-below about a container's rules holds for a binding's.
+decision for one profile only says so in the rules, as any rule may. They are on
+the one item the binding binds — a binding binds one entry, and a ref carries
+none — so a binding's rules have exactly one home. An item whose presentations
+come from two bindings, a broadcast cut from one disc and an updated cut from
+another, holds a `<rules>` for each that has rules, and each presentation's
+`<source>` says which applies to it. Everything below about a container's rules
+holds for a binding's.
 
 **The format defines the reference, not the rules.** The version files are
 written in the language of the server that encodes the library's files —
@@ -878,12 +885,49 @@ or handed to another server, which is exactly the move a `.smd` exists to
 survive.
 
 **Versions, kept.** A file made by version 4 of a season's rules, or version 2
-of its binding's, says so in its `<transform>`, and version 4 stays in the folder after version 5 is written, so
-a library can say exactly what made each of its files wherever it goes. Naming
-the version in force, rather than taking the highest-numbered file, keeps the
-`.smd` the truth about which rules apply: a version can be written and reviewed
-before it takes effect, and going back is pointing at an earlier one. A version
-file, once written, is not edited; a change is a new version.
+of its binding's, says so in its `<transform>`, and version 4 stays in the
+folder after version 5 is written, so a library can say exactly what made each
+of its files wherever it goes. Naming the version in force, rather than taking
+the highest-numbered file, keeps the `.smd` the truth about which rules apply: a
+version can be written and reviewed before it takes effect, and going back is
+pointing at an earlier one. A version file, once written, is not edited; a
+change is a new version, and a version is the whole of the rules, not a change
+to the last.
+
+**The version in force, and the versions that made the files.** `activeVersion`
+says which rules apply now; each presentation's `<transform>` says which made
+it, and the two need not agree. Suppose an episode's full presentation was made
+through its binding's rules at version 2, and the household now adds a mobile
+presentation that needs one more rule — keep the stereo mix as it is, for the
+mobile profile only. Version 3 is version 2 with that rule added, the item's
+`<rules>` moves to `activeVersion="3"`, and the mobile file is made through it:
+
+```xml
+<item type="episode" id="part1">
+  <rules binding="5b0e…91d2" path="rules/bindings/5b0e…91d2" activeVersion="3"/>
+  <presentation nfo="…" file="…">
+    …
+    <transform ruleset="household" version="7">
+      <layer binding="5b0e…91d2" version="2" digest="sha256:77ab…"/>
+    </transform>
+  </presentation>
+  <presentation profile="mobile" nfo="…" file="…">
+    …
+    <transform ruleset="household" version="7">
+      <layer binding="5b0e…91d2" version="3" digest="sha256:c013…"/>
+    </transform>
+  </presentation>
+</item>
+```
+
+Both are true: the full file was made by version 2 and the mobile one by
+version 3. Whether the full file is still what the rules would make is the
+encoding server's question, answered by resolving it again through the rules in
+force: a version 3 that only added the mobile rule decides it as version 2 did,
+and nothing need be made again; a version 3 that changed what the full file
+gets says so. Rules that should differ between presentations of one binding
+differ by a condition on the profile in one version, not by a version each, so a
+binding always has one set of rules in force.
 
 **Authored, not written.** Principle 4 declares every file the tool writes, and
 neither the reference nor the version files are among them: a person decides
@@ -1349,10 +1393,14 @@ of whether the format fits a model built for Emby's shape rather than fighting i
   per item, every referenced path present, no descriptive metadata on a container
   that has an NFO, alternative references resolving, every `<track>` mapping
   resolving against the streams actually in the file, every `<chapter>` list
-  matching the chapters the file carries, and every presentation filename
+  matching the chapters the file carries, every presentation filename
   matching the display name of the alternative or profile it claims — the last
   one being user-visible in Emby's version picker, so a drift there is a bug a
-  person will see.
+  person will see — and every `<rules>` naming a version file that is present.
+  An item's `<rules>` for a binding that none of the item's presentations names
+  is a warning, not an error: the rules are someone's decision and stay until
+  removed on purpose, but a binding whose files have all been replaced by
+  another's no longer needs them.
 
 Two of the measurements above break assumptions that library tools tend to hold
 already, rather than merely adding to them. Extras are widely modelled as
