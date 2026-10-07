@@ -763,13 +763,6 @@ between two sources is.
 library, and it is optional for that reason — a file whose provenance nobody
 recorded is simply a file.
 
-**An earlier form names one disc title.** `<source disc="…" playlist="…"/>`, the
-form this element had before sources were generalised, says that the file was
-made from the whole of one disc title and names no binding. A reader takes it as
-one whole segment of the source `discTitle` `<disc>/<playlist>`; a writer writes
-the new form, so the old one leaves a library as its presentations are written
-again.
-
 **`<chapter>` names the chapters.** Blu-ray chapters are usually unnamed on the
 disc and the names, where anyone has them, are authored knowledge. Principle 4
 would seem to exclude them — an MKV carries chapters natively, so they are

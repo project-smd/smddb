@@ -145,8 +145,7 @@ BindingStream  BindingId, FeatureId, AudioIndex, SubtitleIndex (nullable)
 A Source is a file's origin as anyone holding it can identify it, by a natural
 key: a `Scheme`, which says how the value is read, and the `Value`. A disc
 title's scheme is `discTitle` and its value the disc's content hash and the
-playlist, `3F1AC2E9/00004.mpls` — the pair `<source disc playlist>` named before
-this was generalised. A file's might be `sha256` and its content hash, an IMF
+playlist, `3F1AC2E9/00004.mpls`. A file's might be `sha256` and its content hash, an IMF
 package's its composition's id. Matching a disc title needs more than its key,
 so a disc title's Source has a DiscTitle row beside it holding the playlist's
 segment map and duration; another scheme brings its own row, if it needs one, or
