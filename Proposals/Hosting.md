@@ -21,7 +21,7 @@ thing this project is about.
 Two facts about the workload make an unusual answer available.
 
 **The store is small by construction.** `ContainerDatabase.md` keeps the
-semantic layer only: a DiscTitle exists just while a binding points at it, and
+semantic layer only: a Source exists just while a binding points at it, and
 menus, logos and play-all titles are never rows. That is what keeps this out of
 TheDiscDb's 258,880-playlist territory. Tens of thousands of rows, single-digit
 megabytes, and it grows at the rate people rip discs.
