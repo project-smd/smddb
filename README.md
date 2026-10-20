@@ -1,6 +1,15 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 the smddb project authors -->
 
+<p align="center">
+  <a href="https://github.com/project-smd/smddb/actions/workflows/licence.yml">
+    <img src="https://github.com/project-smd/smddb/actions/workflows/licence.yml/badge.svg" alt="Licence headers">
+  </a>
+  <a href="https://www.apache.org/licenses/LICENSE-2.0">
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0">
+  </a>
+</p>
+
 # smddb
 
 Two designs for the same model: `.smd`, a sidecar format describing series
