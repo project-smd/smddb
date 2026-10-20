@@ -79,14 +79,20 @@ film, a collection — and each container's folder holds its own document,
 
 ```
 containers/
-  Doctor Who (1963) [6a1f0c2e9b7d4e3a]/
-    container.xml
-    Season 13 [00000000000000a3]/
-      container.xml
-      Pyramids of Mars [3b9e01d4c7a25f60]/
-        container.xml
   Alien (1979) [91c4e7a0b2d35f18]/
     container.xml
+  Doctor Who (1963) [6a1f0c2e9b7d4e3a]/
+    container.xml
+    12 - Season 12 [00000000000000a2]/
+      container.xml
+    13 - Season 13 [00000000000000a3]/
+      container.xml
+      01 - Terror of the Zygons [5c2d8e17a04b39f6]/
+        container.xml
+      02 - Planet of Evil [e7014a9c3b5d28f1]/
+        container.xml
+      03 - Pyramids of Mars [3b9e01d4c7a25f60]/
+        container.xml
 ```
 
 A container's folder is named for its display title followed by its id in
@@ -94,6 +100,19 @@ square brackets. The title is written as a library names a folder: the two
 characters a filesystem refuses, `/` and `:`, replaced with `-`, whitespace
 collapsed, and no leading dot. A title of which nothing survives leaves the id
 alone, `[6a1f0c2e9b7d4e3a]`.
+
+**A child's folder begins with its position.** A folder listing sorts by name.
+A series' seasons and a season's serials have an order, the one their parent's
+document gives them, and the listing should show it rather than the order their
+titles happen to fall in, which puts *Planet of Evil* before *Terror of the
+Zygons* and Season 10 before Season 2. So the folder of a container held as a
+child begins with its position among its parent's children, counted from one
+in the order they appear in the parent's sequences and then its extras. The
+number is padded to two digits, or to as many as the parent's count of children
+needs, and is followed by ` - `. A container nothing holds has no order, so its
+folder is the title and id alone, and the top of `containers/` lists by title.
+The position is part of the name only: it is derived from the parent's document
+and means nothing on its own, and a reader still finds a container by its id.
 
 **The id is the identity, and the name is for people.** A reader finds a
 container by the id in brackets, never by the title or the path. A path is
@@ -119,24 +138,27 @@ in the tree it lands. Every container is still its own file, so a contribution
 still touches the files it changes and nothing else, and a review is still a
 diff a person can read.
 
-**What it costs.** A corrected title renames the container's folder. A
-container given a new home moves, and its whole subtree moves with it. Git sees
-both as renames of unchanged files beside the one file that changed, and
-`git log --follow` traces any container through them. Two contributions under a
-folder that one of them renames will conflict. Both are rare: a series' title
-is corrected about once. While contributions arrive as commits, the person
-making the second one rebases it. Once they arrive through the contribution
-API, the service makes the move and resolves it. Finding a container by its id
-means listing the tree rather than building a path, which principle 1 of the
-database proposal keeps cheap. The build reads the whole tree into SQLite
-anyway.
+**What it costs.** A corrected title renames the container's folder. A container
+given a new home moves, and its whole subtree moves with it. A child inserted
+before its siblings, or reordered among them, renumbers the siblings after it,
+and so does a parent whose children first reach a hundred, since the padding
+widens. Git sees each as renames of unchanged files beside the one file that
+changed, and `git log --follow` traces any container through them. Two
+contributions under a folder that one of them renames will conflict. All of
+these are rare: a series' title is corrected about once, and a series' seasons
+and a season's serials are almost always added at the end. While contributions
+arrive as commits, the person making the second one rebases it. Once they arrive
+through the contribution API, the service makes the move and resolves it.
+Finding a container by its id means listing the tree rather than building a
+path, which principle 1 of the database proposal keeps cheap. The build reads
+the whole tree into SQLite anyway.
 
 **Paths follow the data, so a stale one is an error.** Each check runs in CI
 and in the synchronous submit check:
 
 - every container folder sits in its home's folder, or at the top of
   `containers/` for a container nothing holds;
-- its name is the one its title and id give;
+- its name is the one its position, title and id give;
 - it holds exactly one `container.xml`, whose id is the id in brackets;
 - `containers/` holds nothing else.
 
