@@ -18,7 +18,8 @@ document stays as the record of what was decided and why.
 - [Roadmap](Roadmap.md) — the order to build the other three in, what each
   phase has to prove before the next starts, and the decisions that are not
   urgent yet but have a deadline.
-- [Hosting](Hosting.md) — git as the store, a build that bakes the data into
+- [Hosting](Hosting.md) — git as the store, its containers laid out as the
+  tree of their homes and named for people, a build that bakes the data into
   the service, and a REST contribution path that keeps the review mechanism an
   implementation detail. Decides the licence and provenance questions the
   database proposal leaves open.

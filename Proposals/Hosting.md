@@ -57,7 +57,8 @@ server. It needs a build.
 
 ## Where the data lives
 
-A public git repository, one file per container and one per disc.
+A public git repository, one file per container and one per disc, the
+containers laid out as the tree of their homes.
 
 Sharding by entity is the part to get right on the first commit, because it is
 painful to retrofit once history exists. One file per entity means a
@@ -69,6 +70,112 @@ What the repository supplies, for nothing, is the whole of requirement three:
 identity, discussion, diffs, an audit trail better than one we would write,
 rollback, and rate limiting. Building that on top of a live database is the bulk
 of the work, and all of it is undifferentiated.
+
+### The layout follows the tree of homes
+
+`containers/` holds a folder for each container nothing holds — a series, a
+film, a collection — and each container's folder holds its own document,
+`container.xml`, and a folder for each container it holds as a child:
+
+```
+containers/
+  Alien (1979) [91c4e7a0b2d35f18]/
+    container.xml
+  Doctor Who (1963) [6a1f0c2e9b7d4e3a]/
+    container.xml
+    12 - Season 12 [00000000000000a2]/
+      container.xml
+    13 - Season 13 [00000000000000a3]/
+      container.xml
+      01 - Terror of the Zygons [5c2d8e17a04b39f6]/
+        container.xml
+      02 - Planet of Evil [e7014a9c3b5d28f1]/
+        container.xml
+      03 - Pyramids of Mars [3b9e01d4c7a25f60]/
+        container.xml
+```
+
+A container's folder is named for its display title followed by its id in
+square brackets. The title is written as a library names a folder: the two
+characters a filesystem refuses, `/` and `:`, replaced with `-`, whitespace
+collapsed, and no leading dot. A title of which nothing survives leaves the id
+alone, `[6a1f0c2e9b7d4e3a]`.
+
+**A child's folder begins with its position.** A folder listing sorts by name.
+A series' seasons and a season's serials have an order, the one their parent's
+document gives them, and the listing should show it rather than the order their
+titles happen to fall in, which puts *Planet of Evil* before *Terror of the
+Zygons* and Season 10 before Season 2. So the folder of a container held as a
+child begins with its position among its parent's children, counted from one
+in the order they appear in the parent's sequences and then its extras. The
+number is padded to two digits, or to as many as the parent's count of children
+needs, and is followed by ` - `. A container nothing holds has no order, so its
+folder is the title and id alone, and the top of `containers/` lists by title.
+The position is part of the name only: it is derived from the parent's document
+and means nothing on its own, and a reader still finds a container by its id.
+
+**The id is the identity, and the name is for people.** A reader finds a
+container by the id in brackets, never by the title or the path. A path is
+checked, not trusted. The id is also what keeps two names apart that differ
+only in case, which a case-insensitive filesystem would otherwise fold into one
+folder.
+
+**The tree is the one `StructuredContainers.md` already has.** Its principle 5
+gives every item exactly one home container, and the validation pass checks it.
+A child container's home is the container whose sequence or extras hold it as a
+`child`, and that is the folder it sits in. A ref makes no folder: *Tales of the
+TARDIS* lives under its own series, and the *Doctor Who* serials that refer to
+it say so in their documents, not in the tree. This is not the library's rule
+about folders. A library's folders are Emby's, and its principle 2 keeps the
+container tree free of them. These folders exist only to be read by people, so
+they follow the container tree exactly.
+
+**Why a tree, when one flat folder was simpler.** A flat folder of
+`<id>.xml` files is a list of names nobody can read. While the repository is
+edited by hand, in phase 1, finding Season 13 of *Doctor Who* has to be a matter
+of opening folders. A reviewer should also see from a contribution's paths where
+in the tree it lands. Every container is still its own file, so a contribution
+still touches the files it changes and nothing else, and a review is still a
+diff a person can read.
+
+**What it costs.** A corrected title renames the container's folder. A container
+given a new home moves, and its whole subtree moves with it. A child inserted
+before its siblings, or reordered among them, renumbers the siblings after it,
+and so does a parent whose children first reach a hundred, since the padding
+widens. Git sees each as renames of unchanged files beside the one file that
+changed, and `git log --follow` traces any container through them. Two
+contributions under a folder that one of them renames will conflict. All of
+these are rare: a series' title is corrected about once, and a series' seasons
+and a season's serials are almost always added at the end. While contributions
+arrive as commits, the person making the second one rebases it. Once they arrive
+through the contribution API, the service makes the move and resolves it.
+Finding a container by its id means listing the tree rather than building a
+path, which principle 1 of the database proposal keeps cheap. The build reads
+the whole tree into SQLite anyway.
+
+**Paths follow the data, so a stale one is an error.** Each check runs in CI
+and in the synchronous submit check:
+
+- every container folder sits in its home's folder, or at the top of
+  `containers/` for a container nothing holds;
+- its name is the one its position, title and id give;
+- it holds exactly one `container.xml`, whose id is the id in brackets;
+- `containers/` holds nothing else.
+
+In a library a folder whose name has drifted from its title is only a warning,
+because renaming it moves files every player knows. Here nothing knows a path,
+and the tool that writes a container also moves its folder, so a drifted path
+is a mistake with a mechanical fix.
+
+Discs stay one flat file each under `discs/`, named by fingerprint. A disc has
+no home in the container tree: it is reached from the bindings that name it,
+and nobody browses discs by hand.
+
+This replaces the flat `containers/<id>.xml` that SmdKit's `LocalRepository`
+writes today. The clone written that way is converted once, by a move of each
+file to its place in the tree, and `LocalRepository` reads and writes this
+layout from then on. By principle 1 the layout is ours to change, and no
+client of the API ever sees it.
 
 **Where this stops working** is worth naming now. Git as a store fails when
 review throughput becomes the bottleneck — when contributions arrive faster than
